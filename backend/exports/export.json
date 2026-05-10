@@ -1,0 +1,13 @@
+{
+  "solver": "LaplacianFoam",
+  "residuals": {
+    "U": [],
+    "p": [],
+    "k": [],
+    "epsilon": [],
+    "T": [
+      0.0
+    ]
+  },
+  "converged": false
+}

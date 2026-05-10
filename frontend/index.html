@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenFOAM - Web Edition</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/layout.css">
+    <link rel="stylesheet" href="css/theme.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo">
+                <h1>OpenFOAM</h1>
+                <span class="version">Web Edition v1.0</span>
+            </div>
+            <div class="case-info">
+                <span id="case-name">Untitled Case</span>
+                <span id="case-status" class="status-badge">Ready</span>
+            </div>
+            <div class="header-actions">
+                <button class="btn-icon" id="btn-save" title="Save Case">💾</button>
+                <button class="btn-icon" id="btn-load" title="Load Case">📂</button>
+                <button class="btn-icon" id="btn-settings" title="Settings">⚙️</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Panel: Navigation -->
+            <nav class="sidebar">
+                <div class="nav-section">
+                    <h3>Workflow</h3>
+                    <ul class="nav-list">
+                        <li><a href="#" class="nav-item active" data-panel="mesh">Mesh</a></li>
+                        <li><a href="#" class="nav-item" data-panel="solver">Solver</a></li>
+                        <li><a href="#" class="nav-item" data-panel="fields">Fields</a></li>
+                        <li><a href="#" class="nav-item" data-panel="bc">Boundary Conditions</a></li>
+                        <li><a href="#" class="nav-item" data-panel="run">Run</a></li>
+                        <li><a href="#" class="nav-item" data-panel="postprocess">Post-Process</a></li>
+                    </ul>
+                </div>
+                <div class="nav-section">
+                    <h3>Tools</h3>
+                    <ul class="nav-list">
+                        <li><a href="#" class="nav-item" data-panel="utilities">Utilities</a></li>
+                        <li><a href="#" class="nav-item" data-panel="documentation">Documentation</a></li>
+                    </ul>
+                </div>
+            </nav>
+
+            <!-- Center Panel: Main Editor -->
+            <main class="editor-panel">
+                <!-- Mesh Setup -->
+                <section id="mesh" class="panel-content active">
+                    <h2>Mesh Generation & Setup</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Mesh Type</label>
+                <div class="form-group">
+                    <label>Dimension</label>
+                    <select id="mesh-dimension">
+                        <option value="2d">2D</option>
+                        <option value="3d">3D</option>
+                    </select>
+                </div>
+                <div id="nz-group" style="display:none;">
+                    <div class="form-group">
+                        <label>Grid Size Z</label>
+                        <input type="number" id="mesh-nz" value="1" min="1" max="500">
+                    </div>
+                    <div class="form-group">
+                        <label>Domain Z (m)</label>
+                        <input type="number" id="domain-z" value="1.0" step="0.1">
+                    </div>
+                </div>
+                            <select id="mesh-type">
+                                <option value="structured">Structured (Hexahedral)</option>
+                                <option value="unstructured">Unstructured (Tetrahedral)</option>
+                                <option value="hybrid">Hybrid</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Grid Size X</label>
+                            <input type="number" id="mesh-nx" value="50" min="5" max="500">
+                        </div>
+                        <div class="form-group">
+                            <label>Grid Size Y</label>
+                            <input type="number" id="mesh-ny" value="50" min="5" max="500">
+                        </div>
+                        <div class="form-group">
+                            <label>Domain Length X (m)</label>
+                            <input type="number" id="domain-x" value="1.0" min="0.1" max="100" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Domain Length Y (m)</label>
+                            <input type="number" id="domain-y" value="1.0" min="0.1" max="100" step="0.1">
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn-primary" onclick="createMesh()">Create Mesh</button>
+                        <button class="btn-secondary" onclick="importMesh()">Import Mesh</button>
+                    </div>
+                    <div id="mesh-info" class="info-box"></div>
+                </section>
+
+                <!-- Solver Setup -->
+                <section id="solver" class="panel-content">
+                    <h2>Solver Configuration</h2>
+                    <div class="form-group">
+                        <label>Select Solver</label>
+                        <select id="solver-type">
+                            <optgroup label="Incompressible">
+                                <option value="simpleFoam">simpleFoam - Steady-state</option>
+                                <option value="pisoFoam">pisoFoam - Transient PISO</option>
+                                <option value="icoFoam">icoFoam - Transient Laminar</option>
+                            </optgroup>
+                            <optgroup label="Heat Transfer">
+                                <option value="laplacianFoam">laplacianFoam - Heat Diffusion</option>
+                            </optgroup>
+                        </select>
+                    </div>
+
+                    <fieldset>
+                        <legend>Solver Parameters</legend>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Kinematic Viscosity (m²/s)</label>
+                                <input type="number" id="nu" value="1e-5" step="1e-6">
+                            </div>
+                            <div class="form-group">
+                                <label>Density (kg/m³)</label>
+                                <input type="number" id="rho" value="1.0" step="0.1">
+                            </div>
+                            <div class="form-group">
+                                <label>Time Step (s)</label>
+                                <input type="number" id="dt" value="0.01" step="0.001">
+                            </div>
+                            <div class="form-group">
+                                <label>End Time (s)</label>
+                                <input type="number" id="end-time" value="1.0" step="0.1">
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend>Turbulence Model</legend>
+                        <div class="form-group">
+                            <label>Model</label>
+                            <select id="turbulence-model">
+                                <option value="laminar">Laminar</option>
+                                <option value="kEpsilon">k-epsilon</option>
+                                <option value="kOmega">k-omega SST</option>
+                                <option value="spalartAllmaras">Spalart-Allmaras</option>
+                                <option value="les">LES</option>
+                            </select>
+                        </div>
+                    </fieldset>
+
+                    <div class="form-actions">
+                        <button class="btn-primary" onclick="createSolver()">Initialize Solver</button>
+                    </div>
+                </section>
+
+                <!-- Fields Setup -->
+                <section id="fields" class="panel-content">
+                    <h2>Field Initialization</h2>
+                    <div class="form-group">
+                        <label>Velocity Initialization</label>
+                        <div class="form-grid">
+                            <input type="number" id="U-x" value="1.0" placeholder="Ux (m/s)">
+                            <input type="number" id="U-y" value="0.0" placeholder="Uy (m/s)">
+                            <input type="number" id="U-z" value="0.0" placeholder="Uz (m/s)">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Pressure Initialization (Pa)</label>
+                        <input type="number" id="p-init" value="0.0">
+                    </div>
+                    <div class="form-group">
+                        <label>Temperature Initialization (K)</label>
+                        <input type="number" id="T-init" value="288.15">
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn-primary" onclick="initializeFields()">Initialize Fields</button>
+                    </div>
+                </section>
+
+                <!-- Boundary Conditions -->
+                <section id="bc" class="panel-content">
+                    <h2>Boundary Conditions</h2>
+                    <table class="bc-table">
+                        <thead>
+                            <tr>
+                                <th>Patch</th>
+                                <th>Type</th>
+                                <th>Value</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bc-list">
+                            <tr>
+                                <td>inlet</td>
+                                <td>
+                                    <select class="bc-type">
+                                        <option value="inlet">Inlet</option>
+                                    </select>
+                                </td>
+                                <td><input type="number" value="1.0" placeholder="Value"></td>
+                                <td><button class="btn-small" onclick="updateBC(this)">Update</button></td>
+                            </tr>
+                            <tr>
+                                <td>outlet</td>
+                                <td>
+                                    <select class="bc-type">
+                                        <option value="outlet">Outlet</option>
+                                    </select>
+                                </td>
+                                <td><input type="number" value="0.0" placeholder="Value"></td>
+                                <td><button class="btn-small" onclick="updateBC(this)">Update</button></td>
+                            </tr>
+                            <tr>
+                                <td>wall</td>
+                                <td>
+                                    <select class="bc-type">
+                                        <option value="wall">Wall</option>
+                                    </select>
+                                </td>
+                                <td><input type="number" value="0.0" placeholder="Value"></td>
+                                <td><button class="btn-small" onclick="updateBC(this)">Update</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="form-actions">
+                        <button class="btn-secondary" onclick="addPatch()">Add Patch</button>
+                    </div>
+                </section>
+
+                <!-- Run Control -->
+                <section id="run" class="panel-content">
+                    <h2>Simulation Control</h2>
+                    <div class="run-controls">
+                        <div class="form-group">
+                            <label>Maximum Iterations</label>
+                            <input type="number" id="max-iters" value="100" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Convergence Tolerance</label>
+                            <input type="number" id="tolerance" value="1e-5" step="1e-6">
+                        </div>
+                        <div class="form-group">
+                            <label>Data Sampling Interval</label>
+                            <input type="number" id="sample-interval" value="10" min="1">
+                        </div>
+                    </div>
+
+                    <div class="run-actions">
+                        <button class="btn-primary btn-large" id="btn-run" onclick="runSimulation()">▶ Run</button>
+                        <button class="btn-secondary" id="btn-pause" onclick="pauseSimulation()" disabled>⏸ Pause</button>
+                        <button class="btn-danger" id="btn-stop" onclick="stopSimulation()" disabled>⏹ Stop</button>
+                    </div>
+
+                    <div class="progress-container">
+                        <div id="progress-bar" class="progress-bar"></div>
+                        <span id="progress-text">0%</span>
+                    </div>
+
+                    <div class="monitor-panel">
+                        <h3>Monitoring</h3>
+                        <div id="residuals-plot" class="plot-container"></div>
+                        <table id="monitor-table" class="monitor-table">
+                            <tr>
+                                <td>Iteration:</td>
+                                <td id="monitor-iteration">0</td>
+                            </tr>
+                            <tr>
+                                <td>Residual T:</td>
+                                <td id="monitor-residual-t">-</td>
+                            </tr>
+                            <tr>
+                                <td>Elapsed Time:</td>
+                                <td id="monitor-time">0:00</td>
+                            </tr>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Post-Processing -->
+                <section id="postprocess" class="panel-content">
+                    <h2>Post-Processing & Visualization</h2>
+                    <div class="form-group">
+                        <label>Field to Visualize</label>
+                        <select id="viz-field">
+                            <option value="p">Pressure</option>
+                            <option value="U">Velocity</option>
+                            <option value="k">Turbulent Kinetic Energy</option>
+                            <option value="epsilon">Dissipation</option>
+                            <option value="T">Temperature</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn-primary" onclick="visualizeField()">Generate Visualization</button>
+                        <button class="btn-secondary" onclick="exportResults()">Export Results</button>
+                    </div>
+
+                    <div id="visualization-container" class="visualization-box">
+                <div id="canvas-3d" style="width:100%; height:500px; display:none; margin-top:10px; border:1px solid #ccc;"></div>
+                        <canvas id="canvas-viz" width="800" height="600"></canvas>
+                    </div>
+
+                    <div class="export-options">
+                        <h3>Export Options</h3>
+                        <label><input type="checkbox" value="json"> JSON</label>
+                        <label><input type="checkbox" value="csv"> CSV</label>
+                        <label><input type="checkbox" value="vtk"> VTK (ParaView)</label>
+                        <button class="btn-primary" onclick="performExport()">Download</button>
+                    </div>
+                </section>
+
+                <!-- Utilities -->
+                <section id="utilities" class="panel-content">
+                    <h2>Utilities</h2>
+                    <div class="utility-grid">
+                        <div class="utility-card">
+                            <h3>blockMesh</h3>
+                            <p>Structured mesh from dictionary</p>
+                            <button class="btn-secondary" onclick="openBlockMesh()">Configure</button>
+                        </div>
+                        <div class="utility-card">
+                            <h3>decomposePar</h3>
+                            <p>Parallel domain decomposition</p>
+                            <button class="btn-secondary" onclick="decompose()">Decompose</button>
+                        </div>
+                        <div class="utility-card">
+                            <h3>setFields</h3>
+                            <p>Set initial field conditions</p>
+                            <button class="btn-secondary" onclick="setFields()">Configure</button>
+                        </div>
+                        <div class="utility-card">
+                            <h3>mapFields</h3>
+                            <p>Map fields between meshes</p>
+                            <button class="btn-secondary" onclick="mapFields()">Map</button>
+                        </div>
+                    </div>
+                </section>
+            </main>
+
+            <!-- Right Panel: Visualization & Logs -->
+            <aside class="right-panel">
+                <div class="panel-tabs">
+                    <button class="tab-btn active" data-tab="properties">Properties</button>
+                    <button class="tab-btn" data-tab="logs">Logs</button>
+                    <button class="tab-btn" data-tab="help">Help</button>
+                </div>
+
+                <div id="properties" class="panel-tab active">
+                    <h3>Case Properties</h3>
+                    <dl>
+                        <dt>Solver:</dt>
+                        <dd id="prop-solver">-</dd>
+                        <dt>Mesh Size:</dt>
+                        <dd id="prop-mesh">-</dd>
+                        <dt>Status:</dt>
+                        <dd id="prop-status">Not Running</dd>
+                        <dt>Converged:</dt>
+                        <dd id="prop-converged">No</dd>
+                    </dl>
+                </div>
+
+                <div id="logs" class="panel-tab">
+                    <h3>Simulation Logs</h3>
+                    <textarea id="log-output" class="log-viewer" readonly></textarea>
+                </div>
+
+                <div id="help" class="panel-tab">
+                    <h3>Help & Documentation</h3>
+                    <p>Select a workflow step to see help.</p>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <!-- Modal Dialogs -->
+    <div id="error-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('error-modal')">&times;</span>
+            <h2>Error</h2>
+            <p id="error-message"></p>
+            <button class="btn-primary" onclick="closeModal('error-modal')">OK</button>
+        </div>
+    </div>
+
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/visualization.js"></script>
+    <script src="js/visualization3d.js"></script>
+</body>
+</html>
