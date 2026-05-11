@@ -280,12 +280,17 @@ def run_simulation():
 def simulation_status():
     if current_solver is None:
         return jsonify({'status': 'no_solver'}), 200
-    
+
+    residuals = current_solver.get_residuals()
+    # Return last residual values for monitor display
+    last_residuals = {k: v[-1] if v else None for k, v in residuals.items()}
+
     return jsonify({
         'status': 'running' if not current_solver.converged else 'converged',
         'iterations': current_solver.iteration,
         'converged': current_solver.converged,
-        'time': current_solver.time
+        'time': current_solver.time,
+        'residuals': last_residuals
     }), 200
 
 # ========== RESULTS ROUTES ==========
@@ -308,6 +313,33 @@ def get_field(field_name):
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 400
 
+def _get_scalar_field(solver, field_name):
+    """Helper: get scalar numpy array from solver field, with NaN safety."""
+    field = getattr(solver, field_name, None)
+    if field is None or not hasattr(field, 'data') or field.data is None or field.data.size == 0:
+        for fname in ['T', 'p', 'U']:
+            field = getattr(solver, fname, None)
+            if field is not None and hasattr(field, 'data') and field.data is not None and field.data.size > 0:
+                break
+    if field is None or not hasattr(field, 'data') or field.data is None or field.data.size == 0:
+        return None, 'No field data available'
+
+    raw = field.data
+    if raw.shape[1] > 1:
+        scalar = np.linalg.norm(raw, axis=1)
+    else:
+        scalar = raw[:, 0].copy()
+
+    # Replace NaN/Inf with interpolated or zero — critical fix
+    bad = ~np.isfinite(scalar)
+    if bad.all():
+        return None, 'All field values are NaN/Inf — solver may have diverged'
+    if bad.any():
+        scalar[bad] = np.interp(np.flatnonzero(bad), np.flatnonzero(~bad), scalar[~bad])
+
+    return scalar, None
+
+
 @app.route('/api/results/heatmap', methods=['GET'])
 def get_heatmap():
     if current_solver is None or current_mesh is None:
@@ -315,31 +347,46 @@ def get_heatmap():
 
     try:
         field_name = request.args.get('field', 'T')
-
-        # Try requested field, then fallback chain T -> p -> U
-        field = getattr(current_solver, field_name, None)
-        if field is None or not hasattr(field, 'data') or field.data is None or field.data.size == 0:
-            for fname in ['T', 'p', 'U']:
-                field = getattr(current_solver, fname, None)
-                if field is not None and hasattr(field, 'data') and field.data is not None and field.data.size > 0:
-                    break
-
-        if field is None or not hasattr(field, 'data') or field.data is None or field.data.size == 0:
-            return jsonify({'status': 'error', 'message': f'No field data available'}), 400
+        scalar, err = _get_scalar_field(current_solver, field_name)
+        if scalar is None:
+            return jsonify({'status': 'error', 'message': err}), 400
 
         nx, ny, nz = current_mesh.nx, current_mesh.ny, current_mesh.nz
-        # For vector fields use magnitude
-        raw = field.data
-        if raw.shape[1] > 1:
-            scalar = np.linalg.norm(raw, axis=1)
-        else:
-            scalar = raw[:, 0]
-
         is_3d = nz > 1
-        if is_3d:
-            data = scalar.reshape((nz, ny, nx)).tolist()
-        else:
-            data = scalar.reshape((ny, nx)).tolist()
+
+        # Always return 3D shape [nz, ny, nx] — frontend handles both cases
+        data = scalar.reshape((nz, ny, nx)).tolist()
+
+        vmin, vmax = float(scalar.min()), float(scalar.max())
+        heatmap = {
+            'data': data,
+            'min': vmin,
+            'max': vmax,
+            'shape': [nz, ny, nx],
+            'is_3d': is_3d,
+            'field': field_name
+        }
+        return jsonify({'status': 'success', 'heatmap': heatmap}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({'status': 'error', 'message': str(e), 'trace': traceback.format_exc()}), 400
+
+
+@app.route('/api/results/heatmap3d', methods=['GET'])
+def get_heatmap3d():
+    """Dedicated endpoint for 3D heatmap data — always returns [nz][ny][nx] shape."""
+    if current_solver is None or current_mesh is None:
+        return jsonify({'status': 'error', 'message': 'No simulation'}), 400
+
+    try:
+        field_name = request.args.get('field', 'T')
+        scalar, err = _get_scalar_field(current_solver, field_name)
+        if scalar is None:
+            return jsonify({'status': 'error', 'message': err}), 400
+
+        nx, ny, nz = current_mesh.nx, current_mesh.ny, current_mesh.nz
+        is_3d = nz > 1
+        data = scalar.reshape((nz, ny, nx)).tolist()
 
         heatmap = {
             'data': data,
@@ -349,42 +396,10 @@ def get_heatmap():
             'is_3d': is_3d,
             'field': field_name
         }
-
         return jsonify({'status': 'success', 'heatmap': heatmap}), 200
     except Exception as e:
         import traceback
         return jsonify({'status': 'error', 'message': str(e), 'trace': traceback.format_exc()}), 400
-
-
-@app.route('/api/results/heatmap3d', methods=['GET'])
-def get_heatmap3d():
-    """Dedicated endpoint for 3D heatmap data"""
-    if current_solver is None or current_mesh is None:
-        return jsonify({'status': 'error', 'message': 'No simulation'}), 400
-
-    try:
-        field_name = request.args.get('field', 'T')
-        field = getattr(current_solver, field_name, None)
-
-        if field is None or not hasattr(field, 'data') or field.data is None or field.data.size == 0:
-            field = getattr(current_solver, 'T', None) or getattr(current_solver, 'p', None)
-
-        if field is None or not hasattr(field, 'data') or field.data is None or field.data.size == 0:
-            return jsonify({'status': 'error', 'message': 'No field data'}), 400
-
-        nx, ny, nz = current_mesh.nx, current_mesh.ny, current_mesh.nz
-        data = field.data[:, 0].reshape((nz, ny, nx)).tolist()
-
-        heatmap = {
-            'data': data,
-            'min': float(np.min(field.data)),
-            'max': float(np.max(field.data)),
-            'shape': [nz, ny, nx]
-        }
-
-        return jsonify({'status': 'success', 'heatmap': heatmap}), 200
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 400
 
 @app.route('/api/results/export', methods=['POST'])
 def export_results():

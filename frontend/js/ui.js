@@ -286,13 +286,18 @@ async function runSimulation() {
             try {
                 const status = await api.getSimulationStatus();
                 document.getElementById('monitor-iteration').textContent = status.iterations || 0;
-                if (status.residuals && status.residuals.T && status.residuals.T.length > 0) {
-                    document.getElementById('monitor-residual-t').textContent = status.residuals.T[status.residuals.T.length - 1].toFixed(2);
-                }
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 document.getElementById('monitor-time').textContent = elapsed + 's';
+
+                if (status.residuals) {
+                    // T residual (laplacianFoam)
+                    const resT = status.residuals.T;
+                    if (resT !== null && resT !== undefined) {
+                        document.getElementById('monitor-residual-t').textContent = resT.toExponential(3);
+                    }
+                }
             } catch (e) {
-                // Ignore errors during monitoring
+                // Ignore polling errors during simulation
             }
         }, 500);
 
@@ -356,41 +361,57 @@ async function visualizeField() {
 
         const hm = result.heatmap;
         const shape = hm.shape || [1, hm.data.length, (hm.data[0] || []).length];
-        const nz = shape[0], ny = shape[1], nx = shape[2];
-        const is3D = hm.is_3d || nz > 1;
+        let nz = shape[0], ny = shape[1], nx = shape[2];
 
+        // For 2D meshes (nz=1), extrude data into a 3D slab for 3D visualization
+        // Data from backend is always [nz][ny][nx]
+        let data3d = hm.data;
+        let vizNz = nz;
+        const EXTRUDE_LAYERS = 8; // Extrude 2D slab to N layers for visual depth
+        if (nz === 1) {
+            // Duplicate the single layer EXTRUDE_LAYERS times
+            data3d = [];
+            for (let k = 0; k < EXTRUDE_LAYERS; k++) {
+                data3d.push(hm.data[0].map(row => [...row]));
+            }
+            vizNz = EXTRUDE_LAYERS;
+            ui.log(`2D mesh extruded to ${EXTRUDE_LAYERS} layers for 3D visualization`);
+        }
+
+        const hm3d = { ...hm, data: data3d, shape: [vizNz, ny, nx], is_3d: true };
+
+        // Always show 3D canvas
         const canvas3d = document.getElementById('canvas-3d');
         const canvasViz = document.getElementById('canvas-viz');
         const viz3dSection = document.getElementById('viz-3d-section');
-        const paraviewPanel = document.getElementById('paraview-panel');
 
-        if (is3D) {
-            // --- 3D rendering ---
-            canvas3d.style.display = 'block';
-            canvasViz.style.display = 'none';
-            if (viz3dSection) {
-                viz3dSection.style.display = 'block';
-                const sliceInput = document.getElementById('slice-index');
-                if (sliceInput) {
-                    sliceInput.max = nz - 1;
-                    sliceInput.value = Math.floor(nz / 2);
-                    const sv = document.getElementById('slice-value');
-                    if (sv) sv.textContent = sliceInput.value;
-                }
+        canvas3d.style.display = 'block';
+        canvasViz.style.display = 'none';
+
+        if (viz3dSection) {
+            viz3dSection.style.display = 'block';
+            const sliceInput = document.getElementById('slice-index');
+            if (sliceInput) {
+                sliceInput.max = vizNz - 1;
+                sliceInput.value = Math.floor(vizNz / 2);
+                const sv = document.getElementById('slice-value');
+                if (sv) sv.textContent = sliceInput.value;
             }
-            window.render3DHeatmap(hm, { nx, ny, nz });
-            ui.log(`3D heatmap: ${fieldName} (${nx}×${ny}×${nz}), range [${hm.min.toFixed(3)}, ${hm.max.toFixed(3)}]`);
-        } else {
-            // --- 2D rendering ---
-            canvas3d.style.display = 'none';
-            canvasViz.style.display = 'block';
-            if (viz3dSection) viz3dSection.style.display = 'none';
-            renderHeatmap(hm);
-            ui.log(`2D heatmap: ${fieldName} (${nx}×${ny}), range [${hm.min.toFixed(3)}, ${hm.max.toFixed(3)}]`);
         }
 
-        // Update ParaView-style stats panel
-        updateParaViewPanel(hm, fieldName, nx, ny, nz, is3D);
+        // Initialize 3D viz if needed
+        if (!viz3d) initialize3DVisualization('canvas-3d');
+        window.render3DHeatmap(hm3d, { nx, ny, nz: vizNz });
+        ui.log(`3D heatmap rendered: ${fieldName} (${nx}×${ny}×${nz === 1 ? '1→' + vizNz + ' extruded' : vizNz}), range [${hm.min.toFixed(3)}, ${hm.max.toFixed(3)}]`);
+
+        // Also render 2D canvas for reference
+        canvasViz.style.display = 'block';
+        // Build flat 2D slice from first layer
+        const hm2d = { data: hm.data[0], min: hm.min, max: hm.max };
+        renderHeatmap(hm2d);
+
+        // Update ParaView stats
+        updateParaViewPanel(hm, fieldName, nx, ny, nz, nz > 1);
 
     } catch (error) {
         ui.showError(`Visualization failed: ${error.message}`);

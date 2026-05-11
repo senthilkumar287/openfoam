@@ -116,8 +116,9 @@ class APIClient {
 
     // Results
     async getHeatmap(fieldName = 'T') {
-        const endpoint = fieldName ? `/results/heatmap3d?field=${encodeURIComponent(fieldName)}` : '/results/heatmap';
-        return this.request('GET', endpoint);
+        // Always use heatmap3d — it returns unified [nz][ny][nx] shape with is_3d flag
+        const field = fieldName || 'T';
+        return this.request('GET', `/results/heatmap3d?field=${encodeURIComponent(field)}`);
     }
 
     async exportResults(format = 'json') {

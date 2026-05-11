@@ -15,29 +15,37 @@ class VisualizationEngine {
             this.ctx.fillText('No data', 10, 30);
             return;
         }
-        
-        const { data, min, max } = heatmapData;
+
+        const { min, max } = heatmapData;
+        let data = heatmapData.data;
+
+        // If 3D ([nz][ny][nx]), take the middle z-slice
+        if (Array.isArray(data[0]) && Array.isArray(data[0][0])) {
+            const midZ = Math.floor(data.length / 2);
+            data = data[midZ];
+        }
+
         const rows = data.length;
         const cols = data[0] ? data[0].length : 0;
-        
+
         if (cols === 0) {
             console.error('Empty data array');
             return;
         }
-        
+
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        
+
         const cellWidth = this.canvas.width / cols;
         const cellHeight = this.canvas.height / rows;
-        
+
         const range = max - min;
 
         for (let i = 0; i < rows; i++) {
             for (let j = 0; j < cols; j++) {
                 const value = data[i][j];
-                const normalized = range > 0.001 ? (value - min) / range : 0.5;
-                
-                const color = this.getColor(normalized);
+                // Guard against NaN just in case
+                const normalized = (isFinite(value) && range > 0.001) ? (value - min) / range : 0.5;
+                const color = this.getColor(Math.max(0, Math.min(1, normalized)));
                 this.ctx.fillStyle = color;
                 this.ctx.fillRect(j * cellWidth, i * cellHeight, cellWidth, cellHeight);
             }

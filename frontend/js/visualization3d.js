@@ -212,23 +212,29 @@ class Visualization3D {
     }
 
     _getSliceData(data, nx, ny, nz) {
-        // data is shaped [nz][ny][nx] for 3D, or [ny][nx] for 2D
-        const is3D = Array.isArray(data[0]) && Array.isArray(data[0][0]);
+        // data is always [nz][ny][nx] from backend/ui.js
+        // Detect actual dimensionality safely
+        const is3D = Array.isArray(data) && Array.isArray(data[0]) && Array.isArray(data[0][0]);
 
         if (!is3D) {
-            // 2D: data is [ny][nx], return flat
-            return data.flat();
+            // Fallback: treat as flat 2D [ny][nx]
+            return Array.isArray(data[0]) ? data.flat() : data;
         }
 
-        const safeSlice = Math.min(this.sliceIndex, (this.sliceAxis === 'z' ? nz : this.sliceAxis === 'y' ? ny : nx) - 1);
+        const axisMax = {
+            'z': data.length,
+            'y': data[0].length,
+            'x': data[0][0].length
+        };
+        const safeSlice = Math.min(this.sliceIndex, (axisMax[this.sliceAxis] || 1) - 1);
 
         if (this.sliceAxis === 'z') {
             const kIdx = Math.min(safeSlice, data.length - 1);
             return data[kIdx].flat();
         } else if (this.sliceAxis === 'x') {
             const result = [];
-            for (let k = 0; k < nz; k++) {
-                for (let j = 0; j < ny; j++) {
+            for (let k = 0; k < data.length; k++) {
+                for (let j = 0; j < data[k].length; j++) {
                     const iIdx = Math.min(safeSlice, data[k][j].length - 1);
                     result.push(data[k][j][iIdx]);
                 }
@@ -236,9 +242,9 @@ class Visualization3D {
             return result;
         } else { // y
             const result = [];
-            for (let k = 0; k < nz; k++) {
+            for (let k = 0; k < data.length; k++) {
                 const jIdx = Math.min(safeSlice, data[k].length - 1);
-                for (let i = 0; i < nx; i++) {
+                for (let i = 0; i < data[k][jIdx].length; i++) {
                     result.push(data[k][jIdx][i]);
                 }
             }
