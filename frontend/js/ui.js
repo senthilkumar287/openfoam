@@ -344,8 +344,8 @@ function stopSimulation() {
 async function visualizeField() {
     try {
         const fieldName = document.getElementById('viz-field').value;
-        ui.log(`Fetching field: ${fieldName}`);
-        
+        ui.log(`Fetching field: ${fieldName}...`);
+
         const result = await api.getHeatmap(fieldName);
 
         if (!result || !result.heatmap || !result.heatmap.data) {
@@ -354,27 +354,116 @@ async function visualizeField() {
 
         ui.switchPanel('postprocess');
 
-        const is3D = result.heatmap.shape && result.heatmap.shape[0] > 1;
+        const hm = result.heatmap;
+        const shape = hm.shape || [1, hm.data.length, (hm.data[0] || []).length];
+        const nz = shape[0], ny = shape[1], nx = shape[2];
+        const is3D = hm.is_3d || nz > 1;
+
+        const canvas3d = document.getElementById('canvas-3d');
+        const canvasViz = document.getElementById('canvas-viz');
+        const viz3dSection = document.getElementById('viz-3d-section');
+        const paraviewPanel = document.getElementById('paraview-panel');
+
         if (is3D) {
-            document.getElementById('canvas-3d').style.display = 'block';
-            document.getElementById('canvas-viz').style.display = 'none';
-            window.render3DHeatmap(result.heatmap, {
-                nx: result.heatmap.shape[2],
-                ny: result.heatmap.shape[1],
-                nz: result.heatmap.shape[0]
-            });
-            ui.log(`3D heatmap rendered for ${fieldName}`);
+            // --- 3D rendering ---
+            canvas3d.style.display = 'block';
+            canvasViz.style.display = 'none';
+            if (viz3dSection) {
+                viz3dSection.style.display = 'block';
+                const sliceInput = document.getElementById('slice-index');
+                if (sliceInput) {
+                    sliceInput.max = nz - 1;
+                    sliceInput.value = Math.floor(nz / 2);
+                    const sv = document.getElementById('slice-value');
+                    if (sv) sv.textContent = sliceInput.value;
+                }
+            }
+            window.render3DHeatmap(hm, { nx, ny, nz });
+            ui.log(`3D heatmap: ${fieldName} (${nx}×${ny}×${nz}), range [${hm.min.toFixed(3)}, ${hm.max.toFixed(3)}]`);
         } else {
-            document.getElementById('canvas-3d').style.display = 'none';
-            document.getElementById('canvas-viz').style.display = 'block';
-            renderHeatmap(result.heatmap);
-            ui.log(`Heatmap rendered for ${fieldName}`);
+            // --- 2D rendering ---
+            canvas3d.style.display = 'none';
+            canvasViz.style.display = 'block';
+            if (viz3dSection) viz3dSection.style.display = 'none';
+            renderHeatmap(hm);
+            ui.log(`2D heatmap: ${fieldName} (${nx}×${ny}), range [${hm.min.toFixed(3)}, ${hm.max.toFixed(3)}]`);
         }
+
+        // Update ParaView-style stats panel
+        updateParaViewPanel(hm, fieldName, nx, ny, nz, is3D);
 
     } catch (error) {
         ui.showError(`Visualization failed: ${error.message}`);
         ui.log(`ERROR: ${error.message}`);
     }
+}
+
+function applySlice() {
+    const axis = document.getElementById('slice-axis');
+    const index = document.getElementById('slice-index');
+    if (axis && index && typeof setSlice === 'function') {
+        setSlice(axis.value, parseInt(index.value, 10));
+    }
+}
+
+function updateParaViewPanel(hm, fieldName, nx, ny, nz, is3D) {
+    const panel = document.getElementById('paraview-panel');
+    if (!panel) return;
+    panel.style.display = 'block';
+
+    const range = hm.max - hm.min;
+    const mean = (hm.min + hm.max) / 2;
+
+    // Compute simple histogram (10 bins)
+    const bins = 10;
+    const counts = new Array(bins).fill(0);
+    const flat = hm.data.flat(Infinity);
+    flat.forEach(v => {
+        const b = range > 0 ? Math.min(bins-1, Math.floor((v - hm.min)/range * bins)) : 0;
+        counts[b]++;
+    });
+    const maxCount = Math.max(...counts);
+
+    const histBars = counts.map((c, i) => {
+        const pct = maxCount > 0 ? (c/maxCount*100).toFixed(0) : 0;
+        const hue = Math.round((1 - (i+0.5)/bins)*240);
+        return `<div style="display:inline-block;width:${100/bins}%;height:${pct}%;background:hsl(${hue},90%,45%);vertical-align:bottom;border:1px solid rgba(255,255,255,0.1);" title="${c} cells"></div>`;
+    }).join('');
+
+    panel.innerHTML = `
+        <div class="pv-header">
+            <span class="pv-title">&#9632; ParaView-style Information</span>
+            <button onclick="document.getElementById('paraview-panel').style.display='none'" style="float:right;background:none;border:none;cursor:pointer;font-size:16px;">&#x2715;</button>
+        </div>
+        <div class="pv-grid">
+            <div class="pv-block">
+                <h4>Field Info</h4>
+                <table class="pv-table">
+                    <tr><td>Field</td><td><b>${fieldName}</b></td></tr>
+                    <tr><td>Dimensions</td><td>${is3D ? nx+'×'+ny+'×'+nz+' (3D)' : nx+'×'+ny+' (2D)'}</td></tr>
+                    <tr><td>Cells</td><td>${(nx*ny*Math.max(nz,1)).toLocaleString()}</td></tr>
+                </table>
+            </div>
+            <div class="pv-block">
+                <h4>Statistics</h4>
+                <table class="pv-table">
+                    <tr><td>Min</td><td><b>${hm.min.toFixed(4)}</b></td></tr>
+                    <tr><td>Max</td><td><b>${hm.max.toFixed(4)}</b></td></tr>
+                    <tr><td>Range</td><td>${range.toFixed(4)}</td></tr>
+                    <tr><td>Mean &#x2248;</td><td>${mean.toFixed(4)}</td></tr>
+                </table>
+            </div>
+            <div class="pv-block pv-hist-block">
+                <h4>Value Distribution</h4>
+                <div style="height:60px;display:flex;align-items:flex-end;background:#1a1a2e;border-radius:4px;padding:4px;overflow:hidden;">
+                    ${histBars}
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:10px;color:#888;margin-top:2px;">
+                    <span>${hm.min.toFixed(2)}</span><span>${hm.max.toFixed(2)}</span>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 async function exportResults() {

@@ -626,3 +626,34 @@ legend {
         padding: var(--spacing-md);
     }
 }
+
+/* ===== ParaView-style Panel ===== */
+#paraview-panel { font-family: 'Consolas', 'Monaco', monospace; }
+.pv-header {
+    background: #1a1a3e;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #333;
+}
+.pv-title { font-weight: bold; color: #7eb6ff; font-size: 13px; }
+.pv-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+}
+.pv-block {
+    flex: 1;
+    min-width: 180px;
+    padding: 10px 14px;
+    border-right: 1px solid #222;
+}
+.pv-hist-block { flex: 1.5; }
+.pv-block:last-child { border-right: none; }
+.pv-block h4 { margin: 0 0 6px 0; color: #aaa; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.pv-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pv-table td { padding: 2px 6px 2px 0; color: #ccc; }
+.pv-table td:first-child { color: #888; width: 55%; }
+
+/* ===== 3D Viz section ===== */
+#viz-3d-section select, #viz-3d-section input[type=range] { font-size: 13px; }

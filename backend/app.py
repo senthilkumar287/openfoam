@@ -24,7 +24,7 @@ def home():
         'status': 'running',
         'endpoints': [
             '/api/mesh/create', '/api/mesh/create3d', '/api/mesh/import', '/api/solver/list', '/api/solver/info', '/api/solver/create',
-            '/api/bc/set', '/api/simulate/run', '/api/simulate/status', '/api/results/heatmap', '/api/results/export',
+            '/api/bc/set', '/api/simulate/run', '/api/simulate/status', '/api/results/heatmap', '/api/results/heatmap3d', '/api/results/export',
             '/api/case/save', '/api/case/load'
         ]
     })
@@ -242,10 +242,14 @@ def run_simulation():
             current_solver.tolerance = tolerance
             current_solver.sample_interval = sample_interval
 
-            if current_solver.__class__.__name__ == 'SimpleFoam':
+            solver_name = current_solver.__class__.__name__
+            if solver_name == 'SimpleFoam':
                 result = current_solver.solve(max_iters)
+            elif solver_name == 'LaplacianFoam':
+                # Let solver pick stable dt automatically (dt=None)
+                result = current_solver.solve(max_iters, dt=None)
             else:
-                result = current_solver.solve(max_iters, dt)
+                result = current_solver.solve(max_iters, dt=None)
 
             residuals = current_solver.get_residuals()
 
@@ -308,29 +312,76 @@ def get_field(field_name):
 def get_heatmap():
     if current_solver is None or current_mesh is None:
         return jsonify({'status': 'error', 'message': 'No simulation'}), 400
-    
+
     try:
-        from postprocessing import Visualization
-        
-        field = getattr(current_solver, 'T', None) or getattr(current_solver, 'p', None)
-        
-        if field is None or field.data is None or field.data.size == 0:
-            return jsonify({'status': 'error', 'message': 'No field data'}), 400
-        
+        field_name = request.args.get('field', 'T')
+
+        # Try requested field, then fallback chain T -> p -> U
+        field = getattr(current_solver, field_name, None)
+        if field is None or not hasattr(field, 'data') or field.data is None or field.data.size == 0:
+            for fname in ['T', 'p', 'U']:
+                field = getattr(current_solver, fname, None)
+                if field is not None and hasattr(field, 'data') and field.data is not None and field.data.size > 0:
+                    break
+
+        if field is None or not hasattr(field, 'data') or field.data is None or field.data.size == 0:
+            return jsonify({'status': 'error', 'message': f'No field data available'}), 400
+
         nx, ny, nz = current_mesh.nx, current_mesh.ny, current_mesh.nz
-        
-        if nz > 1:
-            data = field.data[:, 0].reshape((nz, ny, nx)).tolist()
+        # For vector fields use magnitude
+        raw = field.data
+        if raw.shape[1] > 1:
+            scalar = np.linalg.norm(raw, axis=1)
         else:
-            data = field.data[:, 0].reshape((ny, nx)).tolist()
-        
+            scalar = raw[:, 0]
+
+        is_3d = nz > 1
+        if is_3d:
+            data = scalar.reshape((nz, ny, nx)).tolist()
+        else:
+            data = scalar.reshape((ny, nx)).tolist()
+
+        heatmap = {
+            'data': data,
+            'min': float(scalar.min()),
+            'max': float(scalar.max()),
+            'shape': [nz, ny, nx],
+            'is_3d': is_3d,
+            'field': field_name
+        }
+
+        return jsonify({'status': 'success', 'heatmap': heatmap}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({'status': 'error', 'message': str(e), 'trace': traceback.format_exc()}), 400
+
+
+@app.route('/api/results/heatmap3d', methods=['GET'])
+def get_heatmap3d():
+    """Dedicated endpoint for 3D heatmap data"""
+    if current_solver is None or current_mesh is None:
+        return jsonify({'status': 'error', 'message': 'No simulation'}), 400
+
+    try:
+        field_name = request.args.get('field', 'T')
+        field = getattr(current_solver, field_name, None)
+
+        if field is None or not hasattr(field, 'data') or field.data is None or field.data.size == 0:
+            field = getattr(current_solver, 'T', None) or getattr(current_solver, 'p', None)
+
+        if field is None or not hasattr(field, 'data') or field.data is None or field.data.size == 0:
+            return jsonify({'status': 'error', 'message': 'No field data'}), 400
+
+        nx, ny, nz = current_mesh.nx, current_mesh.ny, current_mesh.nz
+        data = field.data[:, 0].reshape((nz, ny, nx)).tolist()
+
         heatmap = {
             'data': data,
             'min': float(np.min(field.data)),
             'max': float(np.max(field.data)),
             'shape': [nz, ny, nx]
         }
-        
+
         return jsonify({'status': 'success', 'heatmap': heatmap}), 200
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 400

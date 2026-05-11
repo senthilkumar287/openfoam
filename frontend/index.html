@@ -245,11 +245,11 @@
                     <div class="run-controls">
                         <div class="form-group">
                             <label>Maximum Iterations</label>
-                            <input type="number" id="max-iters" value="100" min="1">
+                            <input type="number" id="max-iters" value="500" min="1">
                         </div>
                         <div class="form-group">
                             <label>Convergence Tolerance</label>
-                            <input type="number" id="tolerance" value="1e-5" step="1e-6">
+                            <input type="number" id="tolerance" value="1e-6" step="1e-6">
                         </div>
                         <div class="form-group">
                             <label>Data Sampling Interval</label>
@@ -306,10 +306,34 @@
                         <button class="btn-secondary" onclick="exportResults()">Export Results</button>
                     </div>
 
+                    <!-- 3D Visualization Controls (shown automatically for 3D meshes) -->
+                    <div id="viz-3d-section" style="display:none; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; padding:12px; margin:10px 0;">
+                        <h3 style="margin-top:0;">3D Slice Controls</h3>
+                        <div class="form-group" style="display:flex; gap:16px; flex-wrap:wrap;">
+                            <div>
+                                <label>Slice Axis</label>
+                                <select id="slice-axis" onchange="applySlice()">
+                                    <option value="z">XY Plane (Z slice)</option>
+                                    <option value="x">YZ Plane (X slice)</option>
+                                    <option value="y">XZ Plane (Y slice)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Slice Index: <span id="slice-value">0</span></label>
+                                <input type="range" id="slice-index" min="0" max="9" value="0" style="width:160px;"
+                                    oninput="document.getElementById('slice-value').textContent=this.value; applySlice()">
+                            </div>
+                        </div>
+                        <p style="font-size:12px; color:#666; margin:4px 0 0;">Drag to rotate &bull; Scroll to zoom</p>
+                    </div>
+
                     <div id="visualization-container" class="visualization-box">
-                <div id="canvas-3d" style="width:100%; height:500px; display:none; margin-top:10px; border:1px solid #ccc;"></div>
+                        <div id="canvas-3d" style="width:100%; height:500px; display:none; margin-top:10px; border-radius:6px; overflow:hidden;"></div>
                         <canvas id="canvas-viz" width="800" height="600"></canvas>
                     </div>
+
+                    <!-- ParaView-style Information Panel -->
+                    <div id="paraview-panel" style="display:none; margin-top:14px; background:#0f0f1a; border:1px solid #333; border-radius:8px; padding:0; overflow:hidden; color:#e0e0e0; font-size:13px;"></div>
 
                     <div class="export-options">
                         <h3>Export Options</h3>

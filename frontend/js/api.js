@@ -116,7 +116,7 @@ class APIClient {
 
     // Results
     async getHeatmap(fieldName = 'T') {
-        const endpoint = fieldName ? `/results/heatmap?field=${encodeURIComponent(fieldName)}` : '/results/heatmap';
+        const endpoint = fieldName ? `/results/heatmap3d?field=${encodeURIComponent(fieldName)}` : '/results/heatmap';
         return this.request('GET', endpoint);
     }
 
