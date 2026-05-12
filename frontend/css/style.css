@@ -267,3 +267,6 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--txt);font-fami
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--bdr2)}
+
+/* Mode button active state */
+.mode-btn.on { background:rgba(10,132,255,.4); border-color:var(--accent); color:var(--accent); }

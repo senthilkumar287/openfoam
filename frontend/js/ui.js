@@ -540,16 +540,18 @@ async function visualizeField() {
     const hm3d = { ...hm, data: data3d, shape: [nz, ny, nx], is_3d: true };
 
     // ── Center 3D viewport ──
-    if (!viz3d) viz3d = new Visualization3D('canvas-3d');
+    viz3d = getViz3d('canvas-3d');
     viz3d.render3DHeatmap(hm3d, { nx, ny, nz });
     const sliceEl = document.getElementById('slice-bar');
     sliceEl.classList.add('show');
-    document.getElementById('slice-idx').max = nz - 1;
-    document.getElementById('slice-idx').value = Math.floor(nz / 2);
-    document.getElementById('slice-disp').textContent = Math.floor(nz / 2);
+    const maxSl = nz - 1;
+    document.getElementById('slice-idx').max   = maxSl;
+    document.getElementById('slice-idx').value = Math.floor(maxSl / 2);
+    document.getElementById('slice-disp').textContent = Math.floor(maxSl / 2);
+    viz3d.sliceIndex = Math.floor(maxSl / 2);
 
     // ── Right panel 3D mini ──
-    if (!rightViz3d) rightViz3d = new Visualization3D('right-canvas-3d');
+    rightViz3d = getViz3d('right-canvas-3d');
     rightViz3d.render3DHeatmap(hm3d, { nx, ny, nz });
 
     // ── 2D heatmap ──
@@ -735,19 +737,36 @@ function drawMiniResidual() {
 
 // ── Slice controls ──
 function setAxis(a) {
-  ['x','y','z'].forEach(ax => {
-    document.getElementById('ax-'+ax).classList.toggle('on', ax===a);
-  });
-  if (viz3d) { viz3d.sliceAxis = a; viz3d._redrawSlice(); }
-  if (rightViz3d) { rightViz3d.sliceAxis = a; rightViz3d._redrawSlice(); }
+  ['x','y','z'].forEach(ax => document.getElementById('ax-'+ax).classList.toggle('on', ax===a));
+  const si = parseInt(document.getElementById('slice-idx').value) || 0;
+  // Update max for new axis
+  const info = viz3d?._lastInfo;
+  if (info) {
+    const maxIdx = a==='z' ? info.nz-1 : a==='y' ? info.ny-1 : info.nx-1;
+    document.getElementById('slice-idx').max = maxIdx;
+    document.getElementById('slice-idx').value = Math.floor(maxIdx/2);
+    document.getElementById('slice-disp').textContent = Math.floor(maxIdx/2);
+  }
+  viz3d?.setSlice(a, parseInt(document.getElementById('slice-idx').value));
+  rightViz3d?.setSlice(a, parseInt(document.getElementById('slice-idx').value));
 }
 function onSlice(v) {
   document.getElementById('slice-disp').textContent = v;
-  if (viz3d) { viz3d.sliceIndex = parseInt(v); viz3d._redrawSlice(); }
-  if (rightViz3d) { rightViz3d.sliceIndex = parseInt(v); rightViz3d._redrawSlice(); }
+  const axis = viz3d?.sliceAxis || 'z';
+  viz3d?.setSlice(axis, parseInt(v));
+  rightViz3d?.setSlice(axis, parseInt(v));
 }
-function resetCamera() { if (viz3d) viz3d.resetCamera(); }
-function setViewAngle(a) { if (viz3d) viz3d.setViewAngle(a); }
+function setRenderMode(mode) {
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('on'));
+  const btn = document.getElementById('mode-' + mode);
+  if (btn) btn.classList.add('on');
+  viz3d?.setMode(mode);
+  rightViz3d?.setMode(mode);
+  // Show slice controls only in slice mode
+  document.getElementById('slice-bar').classList.toggle('show', mode==='slice');
+}
+function resetCamera() { viz3d?.resetCamera(); }
+function setViewAngle(a) { viz3d?.setViewAngle(a); }
 
 // ── Export ──
 async function exportResults(fmt) {

@@ -249,6 +249,16 @@
           <button class="ov-btn" onclick="setViewAngle('iso')">Iso</button>
           <button class="ov-btn" onclick="setViewAngle('front')">Front</button>
           <button class="ov-btn" onclick="setViewAngle('top')">Top</button>
+          <button class="ov-btn" onclick="setViewAngle('side')">Side</button>
+        </div>
+        <!-- ParaView render mode toolbar -->
+        <div style="position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:10;background:rgba(14,16,18,.85);padding:4px 8px;border-radius:5px;border:1px solid var(--bdr);backdrop-filter:blur(4px)">
+          <button id="mode-surface" class="ov-btn on mode-btn" onclick="setRenderMode('surface')" title="Surface">⬛ Surface</button>
+          <button id="mode-slice"   class="ov-btn mode-btn"    onclick="setRenderMode('slice')"   title="Slice plane">✂ Slice</button>
+          <button id="mode-volume"  class="ov-btn mode-btn"    onclick="setRenderMode('volume')"  title="Volume points">🔮 Volume</button>
+          <button id="mode-contour" class="ov-btn mode-btn"    onclick="setRenderMode('contour')" title="Iso-contours">〰 Contour</button>
+          <button id="mode-vectors" class="ov-btn mode-btn"    onclick="setRenderMode('vectors')" title="Vector arrows">➤ Vectors</button>
+          <button id="mode-warp"    class="ov-btn mode-btn"    onclick="setRenderMode('warp')"    title="Warp by scalar">🏔 Warp</button>
         </div>
         <div class="colorbar">
           <span class="cb-lbl" id="cb-field">T [°C]</span>
