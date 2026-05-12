@@ -1,356 +1,243 @@
-// 3D Visualization with Three.js (r128)
-// FIXED: proper geometry, OrbitControls via inline impl, correct color normalization
+/* 3D Heatmap Visualization using Three.js r128 */
 
 class Visualization3D {
-    constructor(containerId) {
-        this.container = document.getElementById(containerId);
-        this.scene = null;
-        this.camera = null;
-        this.renderer = null;
-        this.controls = null;
-        this.currentMesh = null;
-        this.sliceIndex = 0;
-        this.sliceAxis = 'z';
-        this._lastHeatmapData = null;
-        this._lastMeshInfo = null;
-        this.init();
+  constructor(containerId) {
+    this.containerId = containerId;
+    this.container = document.getElementById(containerId);
+    this.sliceIndex = 0;
+    this.sliceAxis  = 'z';
+    this._lastHm = null;
+    this._lastInfo = null;
+    if (this.container) this._init();
+  }
+
+  _init() {
+    const W = this.container.clientWidth  || 600;
+    const H = this.container.clientHeight || 400;
+
+    this.scene    = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x080b0e);
+    this.camera   = new THREE.PerspectiveCamera(55, W/H, 0.01, 100);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setSize(W, H);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.container.innerHTML = '';
+    this.container.appendChild(this.renderer.domElement);
+
+    // Lights
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dl = new THREE.DirectionalLight(0xffffff, 0.6);
+    dl.position.set(2, 3, 2); this.scene.add(dl);
+
+    // Axes
+    this.scene.add(new THREE.AxesHelper(0.3));
+
+    // Orbit controls (manual, no import needed)
+    this._spherical = { theta: 0.5, phi: 1.1, radius: 2.5 };
+    this._target    = new THREE.Vector3(0.5, 0.5, 0.1);
+    this._setupOrbit();
+    this._updateCamera();
+    this._animate();
+  }
+
+  _setupOrbit() {
+    let drag = false, px = 0, py = 0;
+    const el = this.renderer.domElement;
+    el.addEventListener('mousedown', e => { drag=true; px=e.clientX; py=e.clientY; });
+    el.addEventListener('mouseup',   () => drag=false);
+    el.addEventListener('mouseleave',() => drag=false);
+    el.addEventListener('mousemove', e => {
+      if (!drag) return;
+      this._spherical.theta -= (e.clientX-px)*0.005;
+      this._spherical.phi    = Math.max(.1, Math.min(Math.PI-.1, this._spherical.phi+(e.clientY-py)*0.005));
+      px=e.clientX; py=e.clientY;
+      this._updateCamera();
+    });
+    el.addEventListener('wheel', e => {
+      this._spherical.radius = Math.max(.5, Math.min(8, this._spherical.radius+e.deltaY*.002));
+      this._updateCamera(); e.preventDefault();
+    }, {passive:false});
+    // Touch
+    let lastDist = null;
+    el.addEventListener('touchstart', e => { if(e.touches.length===1){px=e.touches[0].clientX;py=e.touches[0].clientY;drag=true;} });
+    el.addEventListener('touchend', () => { drag=false; lastDist=null; });
+    el.addEventListener('touchmove', e => {
+      if(e.touches.length===1 && drag){
+        this._spherical.theta-=(e.touches[0].clientX-px)*0.005;
+        this._spherical.phi=Math.max(.1,Math.min(Math.PI-.1,this._spherical.phi+(e.touches[0].clientY-py)*0.005));
+        px=e.touches[0].clientX; py=e.touches[0].clientY;
+        this._updateCamera();
+      }
+      e.preventDefault();
+    }, {passive:false});
+  }
+
+  _updateCamera() {
+    const {theta, phi, radius} = this._spherical;
+    const t = this._target;
+    this.camera.position.set(
+      t.x + radius*Math.sin(phi)*Math.sin(theta),
+      t.y + radius*Math.cos(phi),
+      t.z + radius*Math.sin(phi)*Math.cos(theta)
+    );
+    this.camera.lookAt(t);
+  }
+
+  _animate() {
+    if (!this.renderer) return;
+    requestAnimationFrame(() => this._animate());
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  // ── Colormap ──
+  _color(t) {
+    t = Math.max(0, Math.min(1, t));
+    const cm = (typeof document !== 'undefined' && document.getElementById('colormap'))
+      ? document.getElementById('colormap').value : 'rainbow';
+    if (cm === 'coolwarm') {
+      return new THREE.Color(
+        t < .5 ? .13+t*1.74 : 1,
+        .08+t*.64,
+        t > .5 ? 1-(t-.5)*1.74 : 1
+      );
     }
-
-    init() {
-        const width = this.container.clientWidth || 800;
-        const height = this.container.clientHeight || 500;
-
-        // Scene setup
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x1a1a2e);
-
-        // Camera
-        this.camera = new THREE.PerspectiveCamera(60, width / height, 0.01, 100);
-        this.camera.position.set(0.5, 0.5, 2.0);
-
-        // Renderer
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setSize(width, height);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.container.innerHTML = '';
-        this.container.appendChild(this.renderer.domElement);
-
-        // Add lights (persistent — added once, not inside render3DHeatmap)
-        this._setupLights();
-
-        // Simple orbit controls via mouse events
-        this._setupOrbitControls();
-
-        // Add axes helper
-        const axes = new THREE.AxesHelper(0.3);
-        this.scene.add(axes);
-
-        // Animation loop
-        this._animate();
+    if (cm === 'turbo') {
+      return new THREE.Color(
+        Math.max(0,Math.min(1, t<.5?2*t:2-2*t+.5)),
+        Math.max(0,Math.min(1, t<.25?4*t:t<.75?1:4-4*t)),
+        Math.max(0,Math.min(1, t<.5?1-2*t:0))
+      );
     }
-
-    _setupLights() {
-        const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-        this.scene.add(ambient);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(2, 3, 2);
-        this.scene.add(dirLight);
+    if (cm === 'viridis') {
+      return new THREE.Color(
+        Math.max(0,Math.min(1,.267+.005*t+2.33*t*t-1.52*t*t*t)),
+        Math.max(0,Math.min(1,.005+1.1*t-.3*t*t)),
+        Math.max(0,Math.min(1,.33+.78*t-.78*t*t))
+      );
     }
+    // rainbow (OpenFOAM default)
+    const h = (1-t)*0.667;
+    return new THREE.Color().setHSL(h, 1.0, 0.5);
+  }
 
-    _setupOrbitControls() {
-        // Manual orbit controls (THREE.OrbitControls not available in CDN r128 bundle)
-        let isDragging = false;
-        let prevX = 0, prevY = 0;
-        let spherical = { theta: 0, phi: Math.PI / 4, radius: 2.0 };
-        let target = new THREE.Vector3(0.5, 0.5, 0.0);
+  // ── Get 2D slice from 3D data ──
+  _getSlice(data) {
+    const isDeep3d = Array.isArray(data[0]) && Array.isArray(data[0][0]);
+    if (!isDeep3d) return data.flat();
 
-        const updateCamera = () => {
-            this.camera.position.x = target.x + spherical.radius * Math.sin(spherical.phi) * Math.sin(spherical.theta);
-            this.camera.position.y = target.y + spherical.radius * Math.cos(spherical.phi);
-            this.camera.position.z = target.z + spherical.radius * Math.sin(spherical.phi) * Math.cos(spherical.theta);
-            this.camera.lookAt(target);
-        };
+    const nz = data.length, ny = data[0].length, nx = data[0][0].length;
+    const si = Math.min(this.sliceIndex, (this.sliceAxis==='z'?nz:this.sliceAxis==='y'?ny:nx) - 1);
 
-        updateCamera();
-
-        const canvas = this.renderer.domElement;
-
-        canvas.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            prevX = e.clientX;
-            prevY = e.clientY;
-        });
-
-        canvas.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            const dx = (e.clientX - prevX) * 0.005;
-            const dy = (e.clientY - prevY) * 0.005;
-            spherical.theta -= dx;
-            spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + dy));
-            prevX = e.clientX;
-            prevY = e.clientY;
-            updateCamera();
-        });
-
-        canvas.addEventListener('mouseup', () => { isDragging = false; });
-        canvas.addEventListener('mouseleave', () => { isDragging = false; });
-
-        canvas.addEventListener('wheel', (e) => {
-            spherical.radius = Math.max(0.5, Math.min(10, spherical.radius + e.deltaY * 0.002));
-            updateCamera();
-            e.preventDefault();
-        }, { passive: false });
-
-        this._updateCamera = updateCamera;
-        this._spherical = spherical;
+    if (this.sliceAxis === 'z') return data[si].flat();
+    if (this.sliceAxis === 'y') {
+      const out = [];
+      for (let k=0;k<nz;k++) for (let i=0;i<nx;i++) out.push(data[k][Math.min(si,ny-1)][i]);
+      return out;
     }
+    const out = [];
+    for (let k=0;k<nz;k++) for (let j=0;j<ny;j++) out.push(data[k][j][Math.min(si,nx-1)]);
+    return out;
+  }
 
-    render3DHeatmap(heatmapData, meshInfo) {
-        this._lastHeatmapData = heatmapData;
-        this._lastMeshInfo = meshInfo;
+  render3DHeatmap(hm, info) {
+    this._lastHm = hm; this._lastInfo = info;
+    if (!this.scene) return;
 
-        // Remove only mesh objects, not lights/axes
-        const toRemove = [];
-        this.scene.children.forEach(obj => {
-            if (obj.isMesh || obj instanceof THREE.Points) toRemove.push(obj);
-        });
-        toRemove.forEach(obj => {
-            if (obj.geometry) obj.geometry.dispose();
-            if (obj.material) obj.material.dispose();
-            this.scene.remove(obj);
-        });
+    // Clear old mesh objects
+    const rem = [];
+    this.scene.children.forEach(o => { if(o.isMesh||o.type==='Points') rem.push(o); });
+    rem.forEach(o => { o.geometry?.dispose(); o.material?.dispose(); this.scene.remove(o); });
 
-        const { data, min, max } = heatmapData;
-        const { nx, ny, nz } = meshInfo;
+    const data = hm.data;
+    const {nx, ny, nz} = info;
+    const vmin = hm.min, vmax = hm.max, range = vmax - vmin || 1;
 
-        if (!data || data.length === 0) {
-            console.warn('No heatmap data to render');
-            return;
+    // Build voxel-based point cloud (efficient for large grids)
+    const total = nx * ny * nz;
+    const positions = new Float32Array(total * 3);
+    const colors    = new Float32Array(total * 3);
+
+    let idx = 0;
+    const is3d = Array.isArray(data[0]) && Array.isArray(data[0][0]);
+
+    for (let k=0; k<nz; k++) {
+      for (let j=0; j<ny; j++) {
+        for (let i=0; i<nx; i++) {
+          let v;
+          if (is3d)  v = (data[k]?.[j]?.[i]) ?? vmin;
+          else        v = vmin;
+          v = isFinite(v) ? v : vmin;
+
+          const t = (v - vmin) / range;
+          const c = this._color(t);
+
+          positions[idx*3]   = i/(nx-1||1);
+          positions[idx*3+1] = j/(ny-1||1);
+          positions[idx*3+2] = k/(Math.max(nz-1,1));
+          colors[idx*3]   = c.r;
+          colors[idx*3+1] = c.g;
+          colors[idx*3+2] = c.b;
+          idx++;
         }
-
-        const cellSize = 1.0 / Math.max(nx, ny, nz || 1);
-        const slice = this._getSliceData(data, nx, ny, nz);
-        const sliceNx = this._getSliceWidth(nx, ny, nz);
-        const sliceNy = this._getSliceHeight(nx, ny, nz);
-
-        // Build geometry with proper triangulated quads (2 triangles per cell)
-        const numCells = slice.length;
-        const positions = new Float32Array(numCells * 6 * 3);  // 6 verts per quad (2 tri)
-        const colors = new Float32Array(numCells * 6 * 3);
-
-        let pIdx = 0, cIdx = 0;
-
-        const valueRange = (max - min) > 1e-10 ? (max - min) : 1.0;
-
-        for (let i = 0; i < slice.length; i++) {
-            const val = slice[i] !== undefined ? slice[i] : min;
-            const normalized = (val - min) / valueRange;
-            const col = this._hslToRgb((1.0 - normalized) * 240, 1.0, 0.5);
-
-            const col_x = i % sliceNx;
-            const col_y = Math.floor(i / sliceNx);
-
-            let x0, y0, z0, x1, y1, z1;
-
-            if (this.sliceAxis === 'z') {
-                x0 = col_x * cellSize;       y0 = col_y * cellSize;       z0 = this.sliceIndex * cellSize;
-                x1 = x0 + cellSize;           y1 = y0 + cellSize;           z1 = z0;
-                // Quad as 2 triangles: (x0,y0) (x1,y0) (x1,y1), (x0,y0) (x1,y1) (x0,y1)
-                positions[pIdx++]=x0; positions[pIdx++]=y0; positions[pIdx++]=z0;
-                positions[pIdx++]=x1; positions[pIdx++]=y0; positions[pIdx++]=z0;
-                positions[pIdx++]=x1; positions[pIdx++]=y1; positions[pIdx++]=z0;
-                positions[pIdx++]=x0; positions[pIdx++]=y0; positions[pIdx++]=z0;
-                positions[pIdx++]=x1; positions[pIdx++]=y1; positions[pIdx++]=z0;
-                positions[pIdx++]=x0; positions[pIdx++]=y1; positions[pIdx++]=z0;
-            } else if (this.sliceAxis === 'x') {
-                y0 = col_x * cellSize;        z0 = col_y * cellSize;        x0 = this.sliceIndex * cellSize;
-                y1 = y0 + cellSize;            z1 = z0 + cellSize;
-                positions[pIdx++]=x0; positions[pIdx++]=y0; positions[pIdx++]=z0;
-                positions[pIdx++]=x0; positions[pIdx++]=y1; positions[pIdx++]=z0;
-                positions[pIdx++]=x0; positions[pIdx++]=y1; positions[pIdx++]=z1;
-                positions[pIdx++]=x0; positions[pIdx++]=y0; positions[pIdx++]=z0;
-                positions[pIdx++]=x0; positions[pIdx++]=y1; positions[pIdx++]=z1;
-                positions[pIdx++]=x0; positions[pIdx++]=y0; positions[pIdx++]=z1;
-            } else { // y
-                x0 = col_x * cellSize;        z0 = col_y * cellSize;        y0 = this.sliceIndex * cellSize;
-                x1 = x0 + cellSize;            z1 = z0 + cellSize;
-                positions[pIdx++]=x0; positions[pIdx++]=y0; positions[pIdx++]=z0;
-                positions[pIdx++]=x1; positions[pIdx++]=y0; positions[pIdx++]=z0;
-                positions[pIdx++]=x1; positions[pIdx++]=y0; positions[pIdx++]=z1;
-                positions[pIdx++]=x0; positions[pIdx++]=y0; positions[pIdx++]=z0;
-                positions[pIdx++]=x1; positions[pIdx++]=y0; positions[pIdx++]=z1;
-                positions[pIdx++]=x0; positions[pIdx++]=y0; positions[pIdx++]=z1;
-            }
-
-            // 6 vertices share same color
-            for (let v = 0; v < 6; v++) {
-                colors[cIdx++] = col.r;
-                colors[cIdx++] = col.g;
-                colors[cIdx++] = col.b;
-            }
-        }
-
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        geometry.computeVertexNormals();
-
-        const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
-        const mesh = new THREE.Mesh(geometry, material);
-        this.scene.add(mesh);
-
-        // Add wireframe bounding box
-        const boxGeo = new THREE.BoxGeometry(
-            nx * cellSize, ny * cellSize, Math.max(nz, 1) * cellSize
-        );
-        const boxMat = new THREE.EdgesGeometry(boxGeo);
-        const boxLine = new THREE.LineSegments(boxMat, new THREE.LineBasicMaterial({ color: 0x888888 }));
-        boxLine.position.set(nx * cellSize / 2, ny * cellSize / 2, Math.max(nz, 1) * cellSize / 2);
-        this.scene.add(boxLine);
-
-        this._addColorbar(min, max);
+      }
     }
 
-    _getSliceData(data, nx, ny, nz) {
-        // data is always [nz][ny][nx] from backend/ui.js
-        // Detect actual dimensionality safely
-        const is3D = Array.isArray(data) && Array.isArray(data[0]) && Array.isArray(data[0][0]);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
 
-        if (!is3D) {
-            // Fallback: treat as flat 2D [ny][nx]
-            return Array.isArray(data[0]) ? data.flat() : data;
-        }
+    const mat = new THREE.PointsMaterial({
+      size: Math.max(0.01, 1.2 / Math.max(nx, ny, nz)),
+      vertexColors: true, sRGBEncoding: true
+    });
+    const pts = new THREE.Points(geo, mat);
+    this.scene.add(pts);
+    this.currentMesh = pts;
 
-        const axisMax = {
-            'z': data.length,
-            'y': data[0].length,
-            'x': data[0][0].length
-        };
-        const safeSlice = Math.min(this.sliceIndex, (axisMax[this.sliceAxis] || 1) - 1);
+    // Bounding box wireframe
+    const boxGeo = new THREE.BoxGeometry(1, 1, nz/(Math.max(nx,ny))||0.05);
+    const boxMat = new THREE.MeshBasicMaterial({color:0x334455, wireframe:true, opacity:.3, transparent:true});
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    box.position.set(.5,.5, nz/(2*Math.max(nx,ny))||0.025);
+    this.scene.add(box);
+  }
 
-        if (this.sliceAxis === 'z') {
-            const kIdx = Math.min(safeSlice, data.length - 1);
-            return data[kIdx].flat();
-        } else if (this.sliceAxis === 'x') {
-            const result = [];
-            for (let k = 0; k < data.length; k++) {
-                for (let j = 0; j < data[k].length; j++) {
-                    const iIdx = Math.min(safeSlice, data[k][j].length - 1);
-                    result.push(data[k][j][iIdx]);
-                }
-            }
-            return result;
-        } else { // y
-            const result = [];
-            for (let k = 0; k < data.length; k++) {
-                const jIdx = Math.min(safeSlice, data[k].length - 1);
-                for (let i = 0; i < data[k][jIdx].length; i++) {
-                    result.push(data[k][jIdx][i]);
-                }
-            }
-            return result;
-        }
-    }
+  _redrawSlice() {
+    if (this._lastHm && this._lastInfo) this.render3DHeatmap(this._lastHm, this._lastInfo);
+  }
 
-    _getSliceWidth(nx, ny, nz) {
-        if (this.sliceAxis === 'z') return nx;
-        if (this.sliceAxis === 'x') return ny;
-        return nx; // y
-    }
+  resetCamera() {
+    this._spherical = { theta: 0.5, phi: 1.1, radius: 2.5 };
+    this._target = new THREE.Vector3(0.5, 0.5, 0.1);
+    this._updateCamera();
+  }
 
-    _getSliceHeight(nx, ny, nz) {
-        if (this.sliceAxis === 'z') return ny;
-        if (this.sliceAxis === 'x') return nz;
-        return nz; // y
-    }
+  setViewAngle(angle) {
+    const views = {
+      iso:   [0.5, 1.1, 2.5],
+      front: [0, Math.PI/2, 2.0],
+      top:   [0, 0.05, 2.5]
+    };
+    const [theta, phi, radius] = views[angle] || [0.5, 1.1, 2.5];
+    this._spherical = { theta, phi, radius };
+    this._updateCamera();
+  }
 
-    _hslToRgb(h, s, l) {
-        // h in [0,360], s and l in [0,1]
-        h = ((h % 360) + 360) % 360;
-        const c = (1 - Math.abs(2 * l - 1)) * s;
-        const x = c * (1 - Math.abs((h / 60) % 2 - 1));
-        const m = l - c / 2;
-        let r = 0, g = 0, b = 0;
-        if (h < 60)       { r = c; g = x; b = 0; }
-        else if (h < 120) { r = x; g = c; b = 0; }
-        else if (h < 180) { r = 0; g = c; b = x; }
-        else if (h < 240) { r = 0; g = x; b = c; }
-        else if (h < 300) { r = x; g = 0; b = c; }
-        else              { r = c; g = 0; b = x; }
-        return { r: r + m, g: g + m, b: b + m };
-    }
-
-    _addColorbar(min, max) {
-        // Draw colorbar on an overlay canvas
-        let cb = document.getElementById('colorbar-canvas-3d');
-        if (!cb) {
-            cb = document.createElement('canvas');
-            cb.id = 'colorbar-canvas-3d';
-            cb.width = 30;
-            cb.height = 200;
-            cb.style.cssText = 'position:absolute;right:16px;top:16px;border-radius:4px;';
-            this.container.style.position = 'relative';
-            this.container.appendChild(cb);
-
-            // Labels
-            const lblContainer = document.createElement('div');
-            lblContainer.id = 'colorbar-labels-3d';
-            lblContainer.style.cssText = 'position:absolute;right:50px;top:16px;color:#fff;font-size:11px;font-family:monospace;';
-            lblContainer.innerHTML = `<div id="cb-max-3d" style="margin-bottom:180px">${max.toFixed(2)}</div><div id="cb-min-3d">${min.toFixed(2)}</div>`;
-            this.container.appendChild(lblContainer);
-        } else {
-            const maxEl = document.getElementById('cb-max-3d');
-            const minEl = document.getElementById('cb-min-3d');
-            if (maxEl) maxEl.textContent = max.toFixed(2);
-            if (minEl) minEl.textContent = min.toFixed(2);
-        }
-
-        const ctx = cb.getContext('2d');
-        const grad = ctx.createLinearGradient(0, 0, 0, cb.height);
-        for (let i = 0; i <= 10; i++) {
-            const t = i / 10;
-            const col = this._hslToRgb((1 - t) * 240, 1.0, 0.5);
-            grad.addColorStop(t, `rgb(${Math.round(col.r*255)},${Math.round(col.g*255)},${Math.round(col.b*255)})`);
-        }
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, cb.width, cb.height);
-    }
-
-    setSlice(axis, index) {
-        this.sliceAxis = axis;
-        this.sliceIndex = parseInt(index, 10);
-        if (this._lastHeatmapData && this._lastMeshInfo) {
-            this.render3DHeatmap(this._lastHeatmapData, this._lastMeshInfo);
-        }
-    }
-
-    _animate() {
-        requestAnimationFrame(() => this._animate());
-        this.renderer.render(this.scene, this.camera);
-    }
-
-    onWindowResize() {
-        const width = this.container.clientWidth;
-        const height = this.container.clientHeight || 500;
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(width, height);
-    }
+  onResize() {
+    if (!this.container || !this.renderer) return;
+    const W = this.container.clientWidth || 600;
+    const H = this.container.clientHeight || 400;
+    this.camera.aspect = W/H; this.camera.updateProjectionMatrix();
+    this.renderer.setSize(W, H);
+  }
 }
 
-let viz3d = null;
-
-function initialize3DVisualization(containerId) {
-    if (viz3d) return; // Don't reinitialize
-    viz3d = new Visualization3D(containerId);
-    window.addEventListener('resize', () => viz3d && viz3d.onWindowResize());
+let viz3dMain = null;
+function initialize3DVisualization(id) {
+  viz3dMain = new Visualization3D(id);
+  return viz3dMain;
 }
-
-function render3DHeatmap(heatmapData, meshInfo) {
-    if (!viz3d) initialize3DVisualization('canvas-3d');
-    viz3d.render3DHeatmap(heatmapData, meshInfo);
-}
-
-function setSlice(axis, index) {
-    if (viz3d) viz3d.setSlice(axis, index);
+function render3DHeatmap(hm, info) {
+  if (!viz3dMain) viz3dMain = new Visualization3D('canvas-3d');
+  viz3dMain.render3DHeatmap(hm, info);
 }

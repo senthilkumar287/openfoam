@@ -1,426 +1,442 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenFOAM - Web Edition</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/layout.css">
-    <link rel="stylesheet" href="css/theme.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenFOAM Clone — CFD Solver</title>
+<link rel="stylesheet" href="css/style.css">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-    <div class="app-container">
-        <!-- Header -->
-        <header class="app-header">
-            <div class="logo">
-                <h1>OpenFOAM</h1>
-                <span class="version">Web Edition v1.0</span>
-            </div>
-            <div class="case-info">
-                <span id="case-name">Untitled Case</span>
-                <span id="case-status" class="status-badge">Ready</span>
-            </div>
-            <div class="header-actions">
-                <button class="btn-icon" id="btn-save" title="Save Case">💾</button>
-                <button class="btn-icon" id="btn-load" title="Load Case">📂</button>
-                <button class="btn-icon" id="btn-settings" title="Settings">⚙️</button>
-            </div>
-        </header>
 
-        <!-- Main Content -->
-        <div class="main-content">
-            <!-- Left Panel: Navigation -->
-            <nav class="sidebar">
-                <div class="nav-section">
-                    <h3>Workflow</h3>
-                    <ul class="nav-list">
-                        <li><a href="#" class="nav-item active" data-panel="mesh">Mesh</a></li>
-                        <li><a href="#" class="nav-item" data-panel="solver">Solver</a></li>
-                        <li><a href="#" class="nav-item" data-panel="fields">Fields</a></li>
-                        <li><a href="#" class="nav-item" data-panel="bc">Boundary Conditions</a></li>
-                        <li><a href="#" class="nav-item" data-panel="run">Run</a></li>
-                        <li><a href="#" class="nav-item" data-panel="postprocess">Post-Process</a></li>
-                    </ul>
-                </div>
-                <div class="nav-section">
-                    <h3>Tools</h3>
-                    <ul class="nav-list">
-                        <li><a href="#" class="nav-item" data-panel="utilities">Utilities</a></li>
-                        <li><a href="#" class="nav-item" data-panel="documentation">Documentation</a></li>
-                    </ul>
-                </div>
-            </nav>
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="tb-logo">⬡ OpenFOAM</div>
+  <div class="tb-menu">File</div><div class="tb-menu">Edit</div>
+  <div class="tb-menu">Mesh</div><div class="tb-menu">Solvers</div>
+  <div class="tb-menu">Post</div><div class="tb-menu">Help</div>
+  <div class="tb-spacer"></div>
+  <div class="tb-status"><span class="dot"></span>localhost:5000 &nbsp;|&nbsp; <span id="case-name">No case</span></div>
+</div>
 
-            <!-- Center Panel: Main Editor -->
-            <main class="editor-panel">
-                <!-- Mesh Setup -->
-                <section id="mesh" class="panel-content active">
-                    <h2>Mesh Generation & Setup</h2>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label>Mesh Type</label>
-                <div class="form-group">
-                    <label>Dimension</label>
-                    <select id="mesh-dimension">
-                        <option value="2d">2D</option>
-                        <option value="3d">3D</option>
-                    </select>
-                </div>
-                <div id="nz-group" style="display:none;">
-                    <div class="form-group">
-                        <label>Grid Size Z</label>
-                        <input type="number" id="mesh-nz" value="1" min="1" max="500">
-                    </div>
-                    <div class="form-group">
-                        <label>Domain Z (m)</label>
-                        <input type="number" id="domain-z" value="1.0" step="0.1">
-                    </div>
-                </div>
-                            <select id="mesh-type">
-                                <option value="structured">Structured (Hexahedral)</option>
-                                <option value="unstructured">Unstructured (Tetrahedral)</option>
-                                <option value="hybrid">Hybrid</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Grid Size X</label>
-                            <input type="number" id="mesh-nx" value="50" min="5" max="500">
-                        </div>
-                        <div class="form-group">
-                            <label>Grid Size Y</label>
-                            <input type="number" id="mesh-ny" value="50" min="5" max="500">
-                        </div>
-                        <div class="form-group">
-                            <label>Domain Length X (m)</label>
-                            <input type="number" id="domain-x" value="1.0" min="0.1" max="100" step="0.1">
-                        </div>
-                        <div class="form-group">
-                            <label>Domain Length Y (m)</label>
-                            <input type="number" id="domain-y" value="1.0" min="0.1" max="100" step="0.1">
-                        </div>
-                    </div>
-                    <div class="form-actions">
-                        <button class="btn-primary" onclick="createMesh()">Create Mesh</button>
-                        <button class="btn-secondary" onclick="importMesh()">Import Mesh</button>
-                    </div>
-                    <div id="mesh-info" class="info-box"></div>
-                </section>
+<!-- TOOLBAR -->
+<div id="toolbar">
+  <div class="tg">
+    <button class="tbtn" onclick="saveCase()">💾 Save</button>
+    <button class="tbtn" onclick="loadCase()">📂 Load</button>
+  </div>
+  <div class="tg">
+    <button class="tbtn prim" id="btn-run" onclick="runSimulation()">▶ Run</button>
+    <button class="tbtn dang" id="btn-stop" onclick="stopSim()" disabled>■ Stop</button>
+  </div>
+  <div class="tg">
+    <button class="tbtn succ" onclick="visualizeField()">🌡 Visualize</button>
+    <button class="tbtn" onclick="exportResults('vtk')">⬆ VTK</button>
+    <button class="tbtn" onclick="exportResults('csv')">📄 CSV</button>
+  </div>
+  <div class="tg">
+    <span style="font-size:10px;color:var(--txt3);font-family:var(--mono)" id="tb-status-text">Ready</span>
+  </div>
+</div>
 
-                <!-- Solver Setup -->
-                <section id="solver" class="panel-content">
-                    <h2>Solver Configuration</h2>
-                    <div class="form-group">
-                        <label>Select Solver</label>
-                        <select id="solver-type">
-                            <optgroup label="Incompressible">
-                                <option value="simpleFoam">simpleFoam - Steady-state</option>
-                                <option value="pisoFoam">pisoFoam - Transient PISO</option>
-                                <option value="icoFoam">icoFoam - Transient Laminar</option>
-                            </optgroup>
-                            <optgroup label="Heat Transfer">
-                                <option value="laplacianFoam">laplacianFoam - Heat Diffusion</option>
-                            </optgroup>
-                        </select>
-                    </div>
+<!-- MAIN APP -->
+<div id="app">
 
-                    <fieldset>
-                        <legend>Solver Parameters</legend>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label>Kinematic Viscosity (m²/s)</label>
-                                <input type="number" id="nu" value="1e-5" step="1e-6">
-                            </div>
-                            <div class="form-group">
-                                <label>Density (kg/m³)</label>
-                                <input type="number" id="rho" value="1.0" step="0.1">
-                            </div>
-                            <div class="form-group">
-                                <label>Time Step (s)</label>
-                                <input type="number" id="dt" value="0.01" step="0.001">
-                            </div>
-                            <div class="form-group">
-                                <label>End Time (s)</label>
-                                <input type="number" id="end-time" value="1.0" step="0.1">
-                            </div>
-                        </div>
-                    </fieldset>
+<!-- ══ LEFT: Setup ══ -->
+<div id="left">
+  <div class="panel-tabs">
+    <div class="ptab on" onclick="switchLeftTab('mesh',this)">MESH</div>
+    <div class="ptab" onclick="switchLeftTab('solver',this)">SOLVER</div>
+    <div class="ptab" onclick="switchLeftTab('bc',this)">BC</div>
+    <div class="ptab" onclick="switchLeftTab('run',this)">RUN</div>
+  </div>
 
-                    <fieldset>
-                        <legend>Turbulence Model</legend>
-                        <div class="form-group">
-                            <label>Model</label>
-                            <select id="turbulence-model">
-                                <option value="laminar">Laminar</option>
-                                <option value="kEpsilon">k-epsilon</option>
-                                <option value="kOmega">k-omega SST</option>
-                                <option value="spalartAllmaras">Spalart-Allmaras</option>
-                                <option value="les">LES</option>
-                            </select>
-                        </div>
-                    </fieldset>
-
-                    <div class="form-actions">
-                        <button class="btn-primary" onclick="createSolver()">Initialize Solver</button>
-                    </div>
-                </section>
-
-                <!-- Fields Setup -->
-                <section id="fields" class="panel-content">
-                    <h2>Field Initialization</h2>
-                    <div class="form-group">
-                        <label>Velocity Initialization</label>
-                        <div class="form-grid">
-                            <input type="number" id="U-x" value="1.0" placeholder="Ux (m/s)">
-                            <input type="number" id="U-y" value="0.0" placeholder="Uy (m/s)">
-                            <input type="number" id="U-z" value="0.0" placeholder="Uz (m/s)">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Pressure Initialization (Pa)</label>
-                        <input type="number" id="p-init" value="0.0">
-                    </div>
-                    <div class="form-group">
-                        <label>Temperature Initialization (K)</label>
-                        <input type="number" id="T-init" value="288.15">
-                    </div>
-                    <div class="form-actions">
-                        <button class="btn-primary" onclick="initializeFields()">Initialize Fields</button>
-                    </div>
-                </section>
-
-                <!-- Boundary Conditions -->
-                <section id="bc" class="panel-content">
-                    <h2>Boundary Conditions</h2>
-                    <table class="bc-table">
-                        <thead>
-                            <tr>
-                                <th>Patch</th>
-                                <th>Type</th>
-                                <th>Value</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="bc-list">
-                            <tr>
-                                <td>inlet</td>
-                                <td>
-                                    <select class="bc-type">
-                                        <option value="inlet">Inlet</option>
-                                    </select>
-                                </td>
-                                <td><input type="number" value="1.0" placeholder="Value"></td>
-                                <td><button class="btn-small" onclick="updateBC(this)">Update</button></td>
-                            </tr>
-                            <tr>
-                                <td>outlet</td>
-                                <td>
-                                    <select class="bc-type">
-                                        <option value="outlet">Outlet</option>
-                                    </select>
-                                </td>
-                                <td><input type="number" value="0.0" placeholder="Value"></td>
-                                <td><button class="btn-small" onclick="updateBC(this)">Update</button></td>
-                            </tr>
-                            <tr>
-                                <td>wall</td>
-                                <td>
-                                    <select class="bc-type">
-                                        <option value="wall">Wall</option>
-                                    </select>
-                                </td>
-                                <td><input type="number" value="0.0" placeholder="Value"></td>
-                                <td><button class="btn-small" onclick="updateBC(this)">Update</button></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    <div class="form-actions">
-                        <button class="btn-secondary" onclick="addPatch()">Add Patch</button>
-                    </div>
-                </section>
-
-                <!-- Run Control -->
-                <section id="run" class="panel-content">
-                    <h2>Simulation Control</h2>
-                    <div class="run-controls">
-                        <div class="form-group">
-                            <label>Maximum Iterations</label>
-                            <input type="number" id="max-iters" value="500" min="1">
-                        </div>
-                        <div class="form-group">
-                            <label>Convergence Tolerance</label>
-                            <input type="number" id="tolerance" value="1e-6" step="1e-6">
-                        </div>
-                        <div class="form-group">
-                            <label>Data Sampling Interval</label>
-                            <input type="number" id="sample-interval" value="10" min="1">
-                        </div>
-                    </div>
-
-                    <div class="run-actions">
-                        <button class="btn-primary btn-large" id="btn-run" onclick="runSimulation()">▶ Run</button>
-                        <button class="btn-secondary" id="btn-pause" onclick="pauseSimulation()" disabled>⏸ Pause</button>
-                        <button class="btn-danger" id="btn-stop" onclick="stopSimulation()" disabled>⏹ Stop</button>
-                    </div>
-
-                    <div class="progress-container">
-                        <div id="progress-bar" class="progress-bar"></div>
-                        <span id="progress-text">0%</span>
-                    </div>
-
-                    <div class="monitor-panel">
-                        <h3>Monitoring</h3>
-                        <div id="residuals-plot" class="plot-container"></div>
-                        <table id="monitor-table" class="monitor-table">
-                            <tr>
-                                <td>Iteration:</td>
-                                <td id="monitor-iteration">0</td>
-                            </tr>
-                            <tr>
-                                <td>Residual T:</td>
-                                <td id="monitor-residual-t">-</td>
-                            </tr>
-                            <tr>
-                                <td>Elapsed Time:</td>
-                                <td id="monitor-time">0:00</td>
-                            </tr>
-                        </table>
-                    </div>
-                </section>
-
-                <!-- Post-Processing -->
-                <section id="postprocess" class="panel-content">
-                    <h2>Post-Processing & Visualization</h2>
-                    <div class="form-group">
-                        <label>Field to Visualize</label>
-                        <select id="viz-field">
-                            <option value="p">Pressure</option>
-                            <option value="U">Velocity</option>
-                            <option value="k">Turbulent Kinetic Energy</option>
-                            <option value="epsilon">Dissipation</option>
-                            <option value="T">Temperature</option>
-                        </select>
-                    </div>
-                    <div class="form-actions">
-                        <button class="btn-primary" onclick="visualizeField()">Generate Visualization</button>
-                        <button class="btn-secondary" onclick="exportResults()">Export Results</button>
-                    </div>
-
-                    <!-- 3D Visualization Controls (shown automatically for 3D meshes) -->
-                    <div id="viz-3d-section" style="display:none; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; padding:12px; margin:10px 0;">
-                        <h3 style="margin-top:0;">3D Slice Controls</h3>
-                        <div class="form-group" style="display:flex; gap:16px; flex-wrap:wrap;">
-                            <div>
-                                <label>Slice Axis</label>
-                                <select id="slice-axis" onchange="applySlice()">
-                                    <option value="z">XY Plane (Z slice)</option>
-                                    <option value="x">YZ Plane (X slice)</option>
-                                    <option value="y">XZ Plane (Y slice)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label>Slice Index: <span id="slice-value">0</span></label>
-                                <input type="range" id="slice-index" min="0" max="9" value="0" style="width:160px;"
-                                    oninput="document.getElementById('slice-value').textContent=this.value; applySlice()">
-                            </div>
-                        </div>
-                        <p style="font-size:12px; color:#666; margin:4px 0 0;">Drag to rotate &bull; Scroll to zoom</p>
-                    </div>
-
-                    <div id="visualization-container" class="visualization-box">
-                        <div id="canvas-3d" style="width:100%; height:500px; display:none; margin-top:10px; border-radius:6px; overflow:hidden;"></div>
-                        <canvas id="canvas-viz" width="800" height="600"></canvas>
-                    </div>
-
-                    <!-- ParaView-style Information Panel -->
-                    <div id="paraview-panel" style="display:none; margin-top:14px; background:#0f0f1a; border:1px solid #333; border-radius:8px; padding:0; overflow:hidden; color:#e0e0e0; font-size:13px;"></div>
-
-                    <div class="export-options">
-                        <h3>Export Options</h3>
-                        <label><input type="checkbox" value="json"> JSON</label>
-                        <label><input type="checkbox" value="csv"> CSV</label>
-                        <label><input type="checkbox" value="vtk"> VTK (ParaView)</label>
-                        <button class="btn-primary" onclick="performExport()">Download</button>
-                    </div>
-                </section>
-
-                <!-- Utilities -->
-                <section id="utilities" class="panel-content">
-                    <h2>Utilities</h2>
-                    <div class="utility-grid">
-                        <div class="utility-card">
-                            <h3>blockMesh</h3>
-                            <p>Structured mesh from dictionary</p>
-                            <button class="btn-secondary" onclick="openBlockMesh()">Configure</button>
-                        </div>
-                        <div class="utility-card">
-                            <h3>decomposePar</h3>
-                            <p>Parallel domain decomposition</p>
-                            <button class="btn-secondary" onclick="decompose()">Decompose</button>
-                        </div>
-                        <div class="utility-card">
-                            <h3>setFields</h3>
-                            <p>Set initial field conditions</p>
-                            <button class="btn-secondary" onclick="setFields()">Configure</button>
-                        </div>
-                        <div class="utility-card">
-                            <h3>mapFields</h3>
-                            <p>Map fields between meshes</p>
-                            <button class="btn-secondary" onclick="mapFields()">Map</button>
-                        </div>
-                    </div>
-                </section>
-            </main>
-
-            <!-- Right Panel: Visualization & Logs -->
-            <aside class="right-panel">
-                <div class="panel-tabs">
-                    <button class="tab-btn active" data-tab="properties">Properties</button>
-                    <button class="tab-btn" data-tab="logs">Logs</button>
-                    <button class="tab-btn" data-tab="help">Help</button>
-                </div>
-
-                <div id="properties" class="panel-tab active">
-                    <h3>Case Properties</h3>
-                    <dl>
-                        <dt>Solver:</dt>
-                        <dd id="prop-solver">-</dd>
-                        <dt>Mesh Size:</dt>
-                        <dd id="prop-mesh">-</dd>
-                        <dt>Status:</dt>
-                        <dd id="prop-status">Not Running</dd>
-                        <dt>Converged:</dt>
-                        <dd id="prop-converged">No</dd>
-                    </dl>
-                </div>
-
-                <div id="logs" class="panel-tab">
-                    <h3>Simulation Logs</h3>
-                    <textarea id="log-output" class="log-viewer" readonly></textarea>
-                </div>
-
-                <div id="help" class="panel-tab">
-                    <h3>Help & Documentation</h3>
-                    <p>Select a workflow step to see help.</p>
-                </div>
-            </aside>
-        </div>
+  <!-- MESH TAB -->
+  <div class="ppanel on" id="ltab-mesh">
+    <div class="psec">
+      <div class="psec-title">📐 BLOCK MESH</div>
+      <div class="frow">
+        <span class="flbl">Dimension</span>
+        <select class="fsel" id="mesh-dim" onchange="onDimChange()">
+          <option value="2d">2D (nz=1)</option>
+          <option value="3d">3D</option>
+        </select>
+      </div>
+      <div class="frow">
+        <span class="flbl">nx</span>
+        <input class="finp" id="mesh-nx" type="number" value="30" min="5" max="150" oninput="updateMeshPreview()">
+      </div>
+      <div class="frow">
+        <span class="flbl">ny</span>
+        <input class="finp" id="mesh-ny" type="number" value="30" min="5" max="150" oninput="updateMeshPreview()">
+      </div>
+      <div class="frow" id="nz-row" style="display:none">
+        <span class="flbl">nz</span>
+        <input class="finp" id="mesh-nz" type="number" value="10" min="2" max="50">
+      </div>
     </div>
-
-    <!-- Modal Dialogs -->
-    <div id="error-modal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal('error-modal')">&times;</span>
-            <h2>Error</h2>
-            <p id="error-message"></p>
-            <button class="btn-primary" onclick="closeModal('error-modal')">OK</button>
-        </div>
+    <div class="psec">
+      <div class="psec-title">📏 DOMAIN (m)</div>
+      <div class="frow"><span class="flbl">Lx</span><input class="finp" id="dom-x" type="number" value="1.0" step="0.1" oninput="updateMeshPreview()"></div>
+      <div class="frow"><span class="flbl">Ly</span><input class="finp" id="dom-y" type="number" value="1.0" step="0.1" oninput="updateMeshPreview()"></div>
+      <div class="frow" id="lz-row" style="display:none">
+        <span class="flbl">Lz</span><input class="finp" id="dom-z" type="number" value="0.2" step="0.05">
+      </div>
+      <div class="frow">
+        <span class="flbl">Type</span>
+        <select class="fsel" id="mesh-type">
+          <option value="structured">Structured</option>
+          <option value="unstructured">Unstructured</option>
+        </select>
+      </div>
     </div>
+    <!-- LIVE MESH PREVIEW -->
+    <div class="psec">
+      <div class="psec-title">👁 MESH PREVIEW</div>
+      <canvas id="mesh-preview"></canvas>
+      <div id="mesh-info" style="margin-top:6px;font-size:10px;color:var(--txt2);font-family:var(--mono);line-height:1.8"></div>
+    </div>
+    <div class="psec">
+      <button class="btn btn-p btn-f" onclick="createMesh()">⬡ Generate Mesh</button>
+      <div class="prog-wrap" id="mesh-prog-wrap" style="display:none">
+        <div class="prog-bar" id="mesh-prog"></div>
+      </div>
+    </div>
+  </div>
 
-    <script src="js/utils.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/visualization.js"></script>
-    <script src="js/visualization3d.js"></script>
+  <!-- SOLVER TAB -->
+  <div class="ppanel" id="ltab-solver">
+    <div class="psec">
+      <div class="psec-title">⚙ SOLVER</div>
+      <div class="frow">
+        <span class="flbl">Type</span>
+        <select class="fsel" id="solver-type" onchange="onSolverChange()">
+          <option value="laplacianFoam">laplacianFoam</option>
+          <option value="simpleFoam">simpleFoam</option>
+          <option value="icoFoam">icoFoam</option>
+          <option value="pisoFoam">pisoFoam</option>
+        </select>
+      </div>
+      <div id="solver-desc" style="margin-top:6px;font-size:10px;color:var(--txt2);font-family:var(--mono);line-height:1.6;padding:6px;background:#0a0d0f;border-radius:4px">
+        Heat diffusion: dT/dt = α∇²T. Solves steady temperature distribution.
+      </div>
+    </div>
+    <div class="psec">
+      <div class="psec-title">🔬 TRANSPORT</div>
+      <div class="frow"><span class="flbl">α / ν</span><input class="finp" id="nu" type="number" value="0.01" step="0.001"></div>
+      <div class="frow"><span class="flbl">ρ</span><input class="finp" id="rho" type="number" value="1.0" step="0.1"></div>
+    </div>
+    <div class="psec">
+      <div class="psec-title">🌀 TURBULENCE</div>
+      <div class="frow">
+        <span class="flbl">Model</span>
+        <select class="fsel">
+          <option>laminar</option><option>k-ε</option><option>k-ω SST</option>
+        </select>
+      </div>
+    </div>
+    <div class="psec">
+      <button class="btn btn-p btn-f" onclick="createSolver()">⚙ Initialize Solver</button>
+    </div>
+  </div>
+
+  <!-- BC TAB -->
+  <div class="ppanel" id="ltab-bc">
+    <div class="psec">
+      <div class="psec-title">🔲 ADD PATCH</div>
+      <div class="frow">
+        <span class="flbl">Patch</span>
+        <select class="fsel" id="bc-patch">
+          <option value="left">left (x_min)</option>
+          <option value="right">right (x_max)</option>
+          <option value="top">top (y_max)</option>
+          <option value="bottom">bottom (y_min)</option>
+          <option value="front">front (z_min)</option>
+          <option value="back">back (z_max)</option>
+        </select>
+      </div>
+      <div class="frow">
+        <span class="flbl">Type</span>
+        <select class="fsel" id="bc-type">
+          <option value="dirichlet">fixedValue</option>
+          <option value="neumann">zeroGradient</option>
+          <option value="wall">wall (no-slip)</option>
+          <option value="inlet">inlet</option>
+          <option value="outlet">outlet</option>
+        </select>
+      </div>
+      <div class="frow">
+        <span class="flbl">Value</span>
+        <input class="finp" id="bc-val" type="number" value="100.0">
+      </div>
+      <button class="btn btn-p btn-f" style="margin-top:4px" onclick="addBC()">+ Add BC</button>
+    </div>
+    <!-- BC VISUAL PREVIEW -->
+    <div class="psec">
+      <div class="psec-title">👁 BC PREVIEW</div>
+      <canvas id="bc-preview"></canvas>
+      <div id="bc-legend" style="margin-top:6px;font-size:9px;font-family:var(--mono);line-height:1.8;color:var(--txt2)"></div>
+    </div>
+    <div class="psec">
+      <div class="psec-title">ACTIVE PATCHES</div>
+      <table class="bc-tbl">
+        <thead><tr><th>Patch</th><th>Type</th><th>Val</th><th></th></tr></thead>
+        <tbody id="bc-list"></tbody>
+      </table>
+    </div>
+    <div class="psec">
+      <div class="psec-title">🌡 INITIAL CONDITIONS</div>
+      <div class="frow"><span class="flbl">T₀</span><input class="finp" id="T-init" type="number" value="300"></div>
+      <div class="frow"><span class="flbl">p₀</span><input class="finp" id="p-init" type="number" value="0"></div>
+      <div class="frow">
+        <span class="flbl">U₀</span>
+        <div class="xyz">
+          <div class="xyz-w"><span class="xyz-l">x</span><input class="finp" id="Ux" type="number" value="0"></div>
+          <div class="xyz-w"><span class="xyz-l">y</span><input class="finp" id="Uy" type="number" value="0"></div>
+        </div>
+      </div>
+      <button class="btn btn-f" style="margin-top:4px" onclick="initFields()">Init Fields</button>
+    </div>
+  </div>
+
+  <!-- RUN TAB -->
+  <div class="ppanel" id="ltab-run">
+    <div class="psec">
+      <div class="psec-title">⏱ CONTROL DICT</div>
+      <div class="frow"><span class="flbl">maxIter</span><input class="finp" id="max-iters" type="number" value="500"></div>
+      <div class="frow"><span class="flbl">tolerance</span><input class="finp" id="tolerance" type="number" value="1e-5" step="1e-6"></div>
+      <div class="frow"><span class="flbl">writeEvery</span><input class="finp" id="sample-int" type="number" value="10"></div>
+    </div>
+    <div class="psec">
+      <div class="psec-title">🧮 SCHEMES</div>
+      <div class="frow"><span class="flbl">ddtScheme</span><select class="fsel"><option>Euler</option><option>CrankNicolson</option></select></div>
+      <div class="frow"><span class="flbl">gradScheme</span><select class="fsel"><option>Gauss linear</option><option>leastSquares</option></select></div>
+    </div>
+    <div class="psec" style="display:flex;gap:6px">
+      <button class="btn btn-s" style="flex:1" id="run-btn" onclick="runSimulation()">▶ Run</button>
+      <button class="btn btn-d" style="flex:1" id="stop-btn" onclick="stopSim()" disabled>■ Stop</button>
+    </div>
+    <div class="psec" id="run-prog-sec" style="display:none">
+      <div class="prog-wrap"><div class="prog-bar" id="run-prog"></div></div>
+      <div style="margin-top:5px;font-size:10px;color:var(--txt3);font-family:var(--mono)" id="run-prog-txt">Running...</div>
+    </div>
+    <!-- Mini props during run -->
+    <div class="psec" id="run-props">
+      <div class="prop-row"><span class="prop-k">solver</span><span class="prop-v a" id="rp-solver">—</span></div>
+      <div class="prop-row"><span class="prop-k">iter</span><span class="prop-v" id="rp-iter">—</span></div>
+      <div class="prop-row"><span class="prop-k">residual</span><span class="prop-v" id="rp-res">—</span></div>
+      <div class="prop-row"><span class="prop-k">status</span><span class="prop-v g" id="rp-status">idle</span></div>
+      <div class="prop-row"><span class="prop-k">elapsed</span><span class="prop-v" id="rp-time">0s</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CENTER: Viewport ══ -->
+<div id="center">
+  <div class="vtabs">
+    <div class="vtab on" onclick="switchView('3d',this)">3D View</div>
+    <div class="vtab" onclick="switchView('2d',this)">2D Heatmap</div>
+    <div class="vtab" onclick="switchView('res',this)">Residuals</div>
+  </div>
+  <div class="vbody">
+    <!-- 3D VIEW -->
+    <div class="vpanel on" id="vpanel-3d">
+      <div id="c3d-wrap">
+        <div id="canvas-3d"></div>
+        <div class="v3d-overlay">
+          <button class="ov-btn" onclick="resetCamera()">⟳ Reset</button>
+          <button class="ov-btn" onclick="setViewAngle('iso')">Iso</button>
+          <button class="ov-btn" onclick="setViewAngle('front')">Front</button>
+          <button class="ov-btn" onclick="setViewAngle('top')">Top</button>
+        </div>
+        <div class="colorbar">
+          <span class="cb-lbl" id="cb-field">T [°C]</span>
+          <span class="cb-lbl" id="cb-max">—</span>
+          <canvas id="cb-canvas" width="18" height="150"></canvas>
+          <span class="cb-lbl" id="cb-min">—</span>
+        </div>
+        <div class="slice-bar" id="slice-bar">
+          <span class="s-lbl">SLICE</span>
+          <div class="ax-btns">
+            <button class="ax-btn on" id="ax-z" onclick="setAxis('z')">Z</button>
+            <button class="ax-btn" id="ax-x" onclick="setAxis('x')">X</button>
+            <button class="ax-btn" id="ax-y" onclick="setAxis('y')">Y</button>
+          </div>
+          <input type="range" id="slice-idx" min="0" max="9" value="0" oninput="onSlice(this.value)">
+          <span id="slice-disp">0</span>
+        </div>
+      </div>
+    </div>
+    <!-- 2D VIEW -->
+    <div class="vpanel" id="vpanel-2d">
+      <div id="c2d-wrap"><canvas id="canvas-viz" width="700" height="500"></canvas></div>
+    </div>
+    <!-- RESIDUALS VIEW -->
+    <div class="vpanel" id="vpanel-res">
+      <div id="residual-wrap">
+        <div style="font-size:10px;color:var(--txt3);font-family:var(--mono)">CONVERGENCE HISTORY</div>
+        <canvas id="residual-canvas"></canvas>
+        <div class="mon-grid">
+          <div class="mon-card"><div class="mon-lbl">ITERATION</div><div class="mon-val" id="mon-iter">—</div></div>
+          <div class="mon-card"><div class="mon-lbl">RESIDUAL</div><div class="mon-val" id="mon-res">—</div></div>
+          <div class="mon-card"><div class="mon-lbl">ELAPSED</div><div class="mon-val" id="mon-time">0s</div></div>
+          <div class="mon-card"><div class="mon-lbl">STATUS</div><div class="mon-val g" id="mon-status">idle</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RIGHT: Results ══ -->
+<div id="right">
+  <div class="rnav">
+    <div class="rnav-item on" onclick="switchRight('viz',this)">
+      <span class="rnav-ico">🌡</span> Visualization
+      <span class="rnav-badge" id="rbdg-viz"></span>
+    </div>
+    <div class="rnav-item" onclick="switchRight('stats',this)">
+      <span class="rnav-ico">📊</span> Field Stats
+      <span class="rnav-badge" id="rbdg-stats"></span>
+    </div>
+    <div class="rnav-item" onclick="switchRight('props',this)">
+      <span class="rnav-ico">🔧</span> Properties
+      <span class="rnav-badge" id="rbdg-props"></span>
+    </div>
+    <div class="rnav-item" onclick="switchRight('export',this)">
+      <span class="rnav-ico">⬆</span> Export
+      <span class="rnav-badge" id="rbdg-export"></span>
+    </div>
+  </div>
+
+  <!-- VIZ RIGHT PANEL -->
+  <div class="rpanel on" id="rpanel-viz">
+    <div class="psec">
+      <div class="psec-title">🌡 FIELD</div>
+      <div class="chip-row">
+        <div class="chip on" id="chip-T" onclick="selectField('T')">T — Temp</div>
+        <div class="chip" id="chip-p" onclick="selectField('p')">p — Press</div>
+        <div class="chip" id="chip-U" onclick="selectField('U')">U — Veloc</div>
+      </div>
+      <div class="frow" style="margin-top:8px">
+        <span class="flbl">Colormap</span>
+        <select class="fsel" id="colormap" onchange="visualizeField()">
+          <option value="rainbow">Rainbow</option>
+          <option value="coolwarm">Cool-Warm</option>
+          <option value="turbo">Turbo</option>
+          <option value="viridis">Viridis</option>
+        </select>
+      </div>
+      <button class="btn btn-p btn-f" style="margin-top:6px" onclick="visualizeField()">🌡 Update</button>
+    </div>
+    <!-- LIVE 3D MINI VIEWPORT IN RIGHT PANEL -->
+    <div class="psec">
+      <div class="psec-title">🧊 3D PREVIEW</div>
+      <div id="right-3d-wrap">
+        <div id="right-canvas-3d"></div>
+      </div>
+    </div>
+    <!-- 2D HEATMAP IN RIGHT PANEL -->
+    <div class="psec">
+      <div class="psec-title">🔥 2D HEATMAP</div>
+      <div id="right-heatmap-wrap">
+        <canvas id="right-canvas-2d" width="260" height="180"></canvas>
+      </div>
+    </div>
+    <!-- RESIDUAL MINI CHART IN RIGHT PANEL -->
+    <div class="psec">
+      <div class="psec-title">📈 CONVERGENCE</div>
+      <canvas id="mini-residual"></canvas>
+    </div>
+  </div>
+
+  <!-- STATS RIGHT PANEL -->
+  <div class="rpanel" id="rpanel-stats">
+    <div class="psec">
+      <div class="psec-title">📊 FIELD STATISTICS</div>
+      <div class="stat-row"><span class="stat-k">Field</span><span class="stat-v" id="st-field">—</span></div>
+      <div class="stat-row"><span class="stat-k">Min</span><span class="stat-v" id="st-min">—</span></div>
+      <div class="stat-row"><span class="stat-k">Max</span><span class="stat-v" id="st-max">—</span></div>
+      <div class="stat-row"><span class="stat-k">Range</span><span class="stat-v" id="st-range">—</span></div>
+      <div class="stat-row"><span class="stat-k">Mean</span><span class="stat-v" id="st-mean">—</span></div>
+      <div class="stat-row"><span class="stat-k">Std Dev</span><span class="stat-v" id="st-std">—</span></div>
+    </div>
+    <div class="psec">
+      <div class="psec-title">⬡ MESH INFO</div>
+      <div class="stat-row"><span class="stat-k">Grid</span><span class="stat-v" id="st-grid">—</span></div>
+      <div class="stat-row"><span class="stat-k">Cells</span><span class="stat-v" id="st-cells">—</span></div>
+      <div class="stat-row"><span class="stat-k">Type</span><span class="stat-v" id="st-mtype">—</span></div>
+      <div class="stat-row"><span class="stat-k">dx</span><span class="stat-v" id="st-dx">—</span></div>
+      <div class="stat-row"><span class="stat-k">dy</span><span class="stat-v" id="st-dy">—</span></div>
+    </div>
+    <div class="psec">
+      <div class="psec-title">⚙ SOLVER INFO</div>
+      <div class="stat-row"><span class="stat-k">Solver</span><span class="stat-v" id="st-solver">—</span></div>
+      <div class="stat-row"><span class="stat-k">Iterations</span><span class="stat-v" id="st-iters">—</span></div>
+      <div class="stat-row"><span class="stat-k">Converged</span><span class="stat-v" id="st-conv">—</span></div>
+      <div class="stat-row"><span class="stat-k">Last Res T</span><span class="stat-v" id="st-resT">—</span></div>
+      <div class="stat-row"><span class="stat-k">Last Res U</span><span class="stat-v" id="st-resU">—</span></div>
+    </div>
+  </div>
+
+  <!-- PROPS RIGHT PANEL -->
+  <div class="rpanel" id="rpanel-props">
+    <div class="psec">
+      <div class="psec-title">🔧 CASE PROPERTIES</div>
+      <div class="prop-row"><span class="prop-k">Mesh</span><span class="prop-v a" id="pp-mesh">—</span></div>
+      <div class="prop-row"><span class="prop-k">Cells</span><span class="prop-v" id="pp-cells">—</span></div>
+      <div class="prop-row"><span class="prop-k">Solver</span><span class="prop-v a" id="pp-solver">—</span></div>
+      <div class="prop-row"><span class="prop-k">α / ν</span><span class="prop-v" id="pp-nu">—</span></div>
+      <div class="prop-row"><span class="prop-k">BC patches</span><span class="prop-v" id="pp-bc">0</span></div>
+      <div class="prop-row"><span class="prop-k">T min</span><span class="prop-v" id="pp-tmin">—</span></div>
+      <div class="prop-row"><span class="prop-k">T max</span><span class="prop-v" id="pp-tmax">—</span></div>
+      <div class="prop-row"><span class="prop-k">Status</span><span class="prop-v g" id="pp-status">idle</span></div>
+    </div>
+  </div>
+
+  <!-- EXPORT RIGHT PANEL -->
+  <div class="rpanel" id="rpanel-export">
+    <div class="psec">
+      <div class="psec-title">⬆ EXPORT RESULTS</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-f" onclick="exportResults('vtk')">📦 Export VTK (ParaView)</button>
+        <button class="btn btn-f" onclick="exportResults('csv')">📄 Export CSV</button>
+        <button class="btn btn-f" onclick="exportResults('json')">🗂 Export JSON</button>
+      </div>
+    </div>
+    <div class="psec">
+      <div class="psec-title">💾 CASE</div>
+      <div class="frow"><span class="flbl">Name</span><input class="finp" id="case-name-inp" value="myCase"></div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn" style="flex:1" onclick="saveCase()">💾 Save</button>
+        <button class="btn" style="flex:1" onclick="loadCase()">📂 Load</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div><!-- end #app -->
+
+<!-- LOG BAR -->
+<div id="logbar">
+  <div class="log-head">
+    <span class="log-title">TERMINAL</span>
+    <div class="log-tabs">
+      <div class="ltab on" onclick="switchLog('log',this)">Log</div>
+      <div class="ltab" onclick="switchLog('mon',this)">Monitor</div>
+    </div>
+    <button class="btn" style="margin-left:auto;padding:2px 8px;font-size:10px" onclick="clearLog()">Clear</button>
+  </div>
+  <textarea id="log-out" readonly spellcheck="false">OpenFOAM Clone v2.0 — Ready
+Backend: http://localhost:5000
+--------------------------------------
+</textarea>
+  <div id="mon-panel"></div>
+</div>
+<div id="toast"></div>
+
+<script src="js/api.js"></script>
+<script src="js/visualization.js"></script>
+<script src="js/visualization3d.js"></script>
+<script src="js/ui.js"></script>
 </body>
 </html>

@@ -1,106 +1,70 @@
-class VisualizationEngine {
-    constructor(canvasId) {
-        this.canvas = document.getElementById(canvasId);
-        this.ctx = this.canvas.getContext('2d');
-        this.data = null;
-    }
-
-    renderHeatmap(heatmapData) {
-        if (!heatmapData || !heatmapData.data || heatmapData.data.length === 0) {
-            console.error('Invalid heatmap data:', heatmapData);
-            this.ctx.fillStyle = '#ccc';
-            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-            this.ctx.fillStyle = '#000';
-            this.ctx.font = '14px Arial';
-            this.ctx.fillText('No data', 10, 30);
-            return;
-        }
-
-        const { min, max } = heatmapData;
-        let data = heatmapData.data;
-
-        // If 3D ([nz][ny][nx]), take the middle z-slice
-        if (Array.isArray(data[0]) && Array.isArray(data[0][0])) {
-            const midZ = Math.floor(data.length / 2);
-            data = data[midZ];
-        }
-
-        const rows = data.length;
-        const cols = data[0] ? data[0].length : 0;
-
-        if (cols === 0) {
-            console.error('Empty data array');
-            return;
-        }
-
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-        const cellWidth = this.canvas.width / cols;
-        const cellHeight = this.canvas.height / rows;
-
-        const range = max - min;
-
-        for (let i = 0; i < rows; i++) {
-            for (let j = 0; j < cols; j++) {
-                const value = data[i][j];
-                // Guard against NaN just in case
-                const normalized = (isFinite(value) && range > 0.001) ? (value - min) / range : 0.5;
-                const color = this.getColor(Math.max(0, Math.min(1, normalized)));
-                this.ctx.fillStyle = color;
-                this.ctx.fillRect(j * cellWidth, i * cellHeight, cellWidth, cellHeight);
-            }
-        }
-
-        this.drawColorBar(min, max);
-    }
-
-    getColor(normalized) {
-        const hue = (1 - normalized) * 240;
-        const saturation = 100;
-        const lightness = 40 + (normalized * 10);
-        
-        return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-    }
-
-    drawColorBar(min, max) {
-        const barWidth = 30;
-        const barHeight = 200;
-        const x = this.canvas.width - 50;
-        const y = (this.canvas.height - barHeight) / 2;
-
-        for (let i = 0; i < barHeight; i++) {
-            const normalized = 1 - (i / barHeight);
-            const color = this.getColor(normalized);
-            this.ctx.fillStyle = color;
-            this.ctx.fillRect(x, y + i, barWidth, 1);
-        }
-
-        this.ctx.strokeStyle = '#333';
-        this.ctx.lineWidth = 1.5;
-        this.ctx.strokeRect(x, y, barWidth, barHeight);
-
-        this.ctx.fillStyle = '#333';
-        this.ctx.font = 'bold 12px Arial';
-        this.ctx.textAlign = 'left';
-        this.ctx.fillText(max.toFixed(1), x + barWidth + 8, y + 12);
-        this.ctx.fillText(min.toFixed(1), x + barWidth + 8, y + barHeight - 2);
-    }
-
-    clear() {
-        this.ctx.fillStyle = 'white';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    }
-}
-
+/* 2D Heatmap Renderer */
 let vizEngine = null;
 
-function initializeVisualization() {
-    vizEngine = new VisualizationEngine('canvas-viz');
+class VisualizationEngine {
+  constructor(canvasId) {
+    this.canvas = document.getElementById(canvasId);
+    this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
+  }
+
+  renderHeatmap(hm) {
+    if (!this.canvas || !this.ctx) return;
+    if (!hm || !hm.data || !hm.data.length) {
+      this.ctx.fillStyle = '#080b0e';
+      this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+      this.ctx.fillStyle = '#55666f';
+      this.ctx.font = '13px JetBrains Mono,monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText('No data', this.canvas.width/2, this.canvas.height/2);
+      return;
+    }
+
+    let data = hm.data;
+    // If 3D, take middle z-slice
+    if (Array.isArray(data[0]) && Array.isArray(data[0][0])) {
+      data = data[Math.floor(data.length/2)];
+    }
+
+    const rows = data.length, cols = data[0]?.length || 0;
+    if (!cols) return;
+
+    const W = this.canvas.width, H = this.canvas.height;
+    const cw = W/cols, ch = H/rows;
+    const range = hm.max - hm.min;
+    const colorFn = typeof getColormapFn === 'function' ? getColormapFn() :
+      (t) => `hsl(${(1-t)*240},100%,${40+t*15}%)`;
+
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < cols; j++) {
+        const v = data[i][j];
+        const norm = isFinite(v) && range > 1e-6 ? (v - hm.min)/range : 0.5;
+        this.ctx.fillStyle = colorFn(Math.max(0, Math.min(1, norm)));
+        this.ctx.fillRect(j*cw, i*ch, cw+1, ch+1);
+      }
+    }
+
+    // Colorbar
+    const bx = W-45, by = 20, bH = H-40, bW = 18;
+    for (let i=0; i<bH; i++) {
+      this.ctx.fillStyle = colorFn(1-i/bH);
+      this.ctx.fillRect(bx, by+i, bW, 1);
+    }
+    this.ctx.strokeStyle='rgba(100,150,180,.5)'; this.ctx.lineWidth=1;
+    this.ctx.strokeRect(bx,by,bW,bH);
+    this.ctx.fillStyle='rgba(200,220,240,.8)'; this.ctx.font='10px JetBrains Mono,monospace';
+    this.ctx.textAlign='left';
+    this.ctx.fillText(hm.max.toFixed(1), bx+bW+4, by+10);
+    this.ctx.fillText(hm.min.toFixed(1), bx+bW+4, by+bH);
+  }
 }
 
-function renderHeatmap(heatmapData) {
-    if (!vizEngine) initializeVisualization();
-    vizEngine.renderHeatmap(heatmapData);
+function initializeVisualization() {
+  vizEngine = new VisualizationEngine('canvas-viz');
+}
+
+function renderHeatmap(hm) {
+  if (!vizEngine) initializeVisualization();
+  vizEngine.renderHeatmap(hm);
 }
 
 document.addEventListener('DOMContentLoaded', initializeVisualization);

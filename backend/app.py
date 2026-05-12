@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_file
 from flask_cors import CORS
 import numpy as np
 import json
@@ -18,10 +18,16 @@ current_case = {}
 
 @app.route('/', methods=['GET'])
 def home():
+    frontend_dir = os.path.join(os.path.dirname(__file__), '..', 'frontend')
+    return send_file(os.path.join(frontend_dir, 'index.html'))
+
+@app.route('/api', methods=['GET'])
+def api_home():
     return jsonify({
         'app': 'OpenFOAM Clone',
         'version': '1.0',
         'status': 'running',
+        'ui': 'http://localhost:5000/',
         'endpoints': [
             '/api/mesh/create', '/api/mesh/create3d', '/api/mesh/import', '/api/solver/list', '/api/solver/info', '/api/solver/create',
             '/api/bc/set', '/api/simulate/run', '/api/simulate/status', '/api/results/heatmap', '/api/results/heatmap3d', '/api/results/export',
@@ -163,6 +169,7 @@ def set_boundary_condition():
     
     data = request.json
     patch_name = data.get('patch', 'wall')
+    location = data.get('location', None)  # x_min, x_max, y_min, y_max, z_min, z_max
     bc_type = data.get('type', 'dirichlet')
     bc_value = data.get('value', 0.0)
     
@@ -189,18 +196,52 @@ def set_boundary_condition():
         else:
             return jsonify({'status': 'error', 'message': f'Unknown BC type: {bc_type}'}), 400
         
+        # Compute boundary patch cell indices based on location
+        boundary_cells = []
+        if location:
+            nx, ny, nz = current_mesh.nx, current_mesh.ny, current_mesh.nz
+            if location == 'x_min':  # Left wall (i=0)
+                boundary_cells = [k * ny * nx + j * nx + 0 
+                                 for k in range(nz) for j in range(ny)]
+            elif location == 'x_max':  # Right wall (i=nx-1)
+                boundary_cells = [k * ny * nx + j * nx + (nx - 1) 
+                                 for k in range(nz) for j in range(ny)]
+            elif location == 'y_min':  # Front wall (j=0)
+                boundary_cells = [k * ny * nx + 0 * nx + i 
+                                 for k in range(nz) for i in range(nx)]
+            elif location == 'y_max':  # Back wall (j=ny-1)
+                boundary_cells = [k * ny * nx + (ny - 1) * nx + i 
+                                 for k in range(nz) for i in range(nx)]
+            elif location == 'z_min':  # Bottom wall (k=0)
+                boundary_cells = [0 * ny * nx + j * nx + i 
+                                 for j in range(ny) for i in range(nx)]
+            elif location == 'z_max':  # Top wall (k=nz-1)
+                boundary_cells = [(nz - 1) * ny * nx + j * nx + i 
+                                 for j in range(ny) for i in range(nx)]
+        
+        # Add boundary patch to mesh if we have cells
+        if boundary_cells:
+            current_mesh.add_boundary_patch(patch_name, boundary_cells, bc_type)
+        
         # Add BC to manager
         current_mesh.bc_manager.add_bc(patch_name, bc)
         
         if 'boundary_conditions' not in current_case:
             current_case['boundary_conditions'] = {}
-        current_case['boundary_conditions'][patch_name] = {'type': bc_type, 'value': bc_value}
+        current_case['boundary_conditions'][patch_name] = {
+            'type': bc_type, 
+            'value': bc_value, 
+            'location': location,
+            'cells': len(boundary_cells)
+        }
         
         return jsonify({
             'status': 'success',
             'patch': patch_name,
             'type': bc_type,
-            'message': f'BC set on {patch_name}'
+            'location': location,
+            'cells': len(boundary_cells),
+            'message': f'BC set on {patch_name} at {location} ({len(boundary_cells)} cells)'
         }), 200
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 400
@@ -252,15 +293,17 @@ def run_simulation():
                 result = current_solver.solve(max_iters, dt=None)
 
             residuals = current_solver.get_residuals()
+            # Sanitize: remove NaN/Inf so JSON serialization never fails
+            safe_res = {
+                k: [float(x) if np.isfinite(x) else 0.0 for x in v[-5:]]
+                for k, v in residuals.items()
+            }
 
             return jsonify({
                 'status': 'success',
                 'converged': current_solver.converged,
                 'iterations': current_solver.iteration,
-                'residuals': {
-                    k: v[-5:] if v else []
-                    for k, v in residuals.items()
-                },
+                'residuals': safe_res,
                 'message': 'Simulation completed'
             }), 200
 

@@ -1,647 +1,815 @@
-// UI Manager
-class UIManager {
-    constructor() {
-        this.currentPanel = 'mesh';
-        this.init();
-    }
+/* ============================================================
+   OpenFOAM Clone — Main UI Controller
+   Handles: mesh, solver, BC, simulation, visualization
+   ============================================================ */
+const API = 'http://localhost:5000';
+let currentMesh = null, currentSolver = null;
+let monTimer = null, startTime = null;
+let residualHistory = {};
+let activeBCs = [];
+let activeField = 'T';
+let viz3d = null, rightViz3d = null;
+let lastHeatmap = null;
 
-    init() {
-        this.setupPanelNavigation();
-        this.setupTabNavigation();
-        this.attachEventListeners();
-    }
-
-    setupPanelNavigation() {
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                e.preventDefault();
-                const panel = item.getAttribute('data-panel');
-                this.switchPanel(panel);
-                
-                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-                item.classList.add('active');
-            });
-        });
-    }
-
-    switchPanel(panelName) {
-        document.querySelectorAll('.panel-content').forEach(p => {
-            p.classList.remove('active');
-        });
-        
-        const panel = document.getElementById(panelName);
-        if (panel) {
-            panel.classList.add('active');
-        }
-        
-        this.currentPanel = panelName;
-    }
-
-    setupTabNavigation() {
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const tabName = btn.getAttribute('data-tab');
-                this.switchTab(tabName);
-                
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-            });
-        });
-    }
-
-    switchTab(tabName) {
-        document.querySelectorAll('.panel-tab').forEach(t => {
-            t.classList.remove('active');
-        });
-        
-        const tab = document.getElementById(tabName);
-        if (tab) {
-            tab.classList.add('active');
-        }
-    }
-
-    attachEventListeners() {
-        document.getElementById('btn-save').addEventListener('click', () => {
-            const caseName = prompt('Case name:', 'myCase');
-            if (caseName) {
-                saveCase(caseName);
-            }
-        });
-
-        document.getElementById('btn-load').addEventListener('click', () => {
-            loadCase();
-        });
-
-        document.getElementById('btn-settings').addEventListener('click', () => {
-            alert('Settings panel coming soon...');
-        });
-    }
-
-    showError(message) {
-        const modal = document.getElementById('error-modal');
-        document.getElementById('error-message').textContent = message;
-        modal.classList.add('active');
-    }
-
-    updateProgress(percent) {
-        const bar = document.querySelector('.progress-bar');
-        const text = document.getElementById('progress-text');
-        bar.style.setProperty('--width', percent + '%');
-        bar.style.width = percent + '%';
-        text.textContent = percent + '%';
-    }
-
-    updateProperties(props) {
-        Object.keys(props).forEach(key => {
-            const el = document.getElementById(`prop-${key}`);
-            if (el) {
-                el.textContent = props[key];
-            }
-        });
-    }
-
-    log(message) {
-        const logOutput = document.getElementById('log-output');
-        const timestamp = new Date().toLocaleTimeString();
-        logOutput.value += `[${timestamp}] ${message}\n`;
-        logOutput.scrollTop = logOutput.scrollHeight;
-    }
-
-    addBCRow(patch, type, value) {
-        const table = document.getElementById('bc-list');
-        const row = table.insertRow();
-        row.innerHTML = `
-            <td>${patch}</td>
-            <td>
-                <select class="bc-type">
-                    <option value="${type}" selected>${type}</option>
-                </select>
-            </td>
-            <td><input type="number" value="${value}" placeholder="Value"></td>
-            <td><button class="btn-small" onclick="updateBC(this)">Update</button></td>
-        `;
-    }
-
-    updateMonitor(data) {
-        document.getElementById('monitor-iteration').textContent = data.iteration || '-';
-        document.getElementById('monitor-residual-u').textContent = data.residual_u || '-';
-        document.getElementById('monitor-residual-p').textContent = data.residual_p || '-';
-        document.getElementById('monitor-time').textContent = data.time || '0:00';
-    }
+// ── Tab switching ──
+function switchLeftTab(id, el) {
+  document.querySelectorAll('.ppanel').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.ptab').forEach(t => t.classList.remove('on'));
+  document.getElementById('ltab-' + id).classList.add('on');
+  el.classList.add('on');
+}
+function switchView(id, el) {
+  document.querySelectorAll('.vpanel').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.vtab').forEach(t => t.classList.remove('on'));
+  document.getElementById('vpanel-' + id).classList.add('on');
+  el.classList.add('on');
+}
+function switchRight(id, el) {
+  document.querySelectorAll('.rpanel').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.rnav-item').forEach(t => t.classList.remove('on'));
+  document.getElementById('rpanel-' + id).classList.add('on');
+  el.classList.add('on');
+}
+function switchLog(id, el) {
+  document.querySelectorAll('.ltab').forEach(t => t.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('log-out').style.display = id === 'log' ? 'block' : 'none';
+  const mp = document.getElementById('mon-panel');
+  mp.style.display = id === 'mon' ? 'block' : 'none';
+  if (id === 'mon') mp.classList.add('show');
 }
 
-// Global UI instance
-const ui = new UIManager();
-
-// Modal helpers
-function closeModal(modalId) {
-    document.getElementById(modalId).classList.remove('active');
+// ── Logging ──
+function log(msg, type = 'info') {
+  const el = document.getElementById('log-out');
+  const t = new Date().toLocaleTimeString();
+  const prefix = type === 'success' ? '✅' : type === 'error' ? '❌' : type === 'warn' ? '⚠' : '›';
+  el.value += `[${t}] ${prefix} ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { document.getElementById('log-out').value = ''; }
+function setStatus(txt, cls = '') {
+  const el = document.getElementById('tb-status-text');
+  el.textContent = txt;
+  el.style.color = cls === 'ok' ? 'var(--green)' : cls === 'er' ? 'var(--red)' : 'var(--txt3)';
 }
 
-function openModal(modalId) {
-    document.getElementById(modalId).classList.add('active');
+// ── Toast ──
+function toast(msg, type = 'in') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  setTimeout(() => { t.className = ''; }, 3000);
 }
 
-// UI Functions (called from HTML)
+// ── Mesh dimension toggle ──
+function onDimChange() {
+  const is3d = document.getElementById('mesh-dim').value === '3d';
+  document.getElementById('nz-row').style.display = is3d ? 'flex' : 'none';
+  document.getElementById('lz-row').style.display = is3d ? 'flex' : 'none';
+  updateMeshPreview();
+}
+
+// ── LIVE MESH PREVIEW (canvas) ──
+function updateMeshPreview() {
+  const canvas = document.getElementById('mesh-preview');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width = canvas.offsetWidth || 240;
+  const H = canvas.height = 170;
+
+  const nx = parseInt(document.getElementById('mesh-nx').value) || 30;
+  const ny = parseInt(document.getElementById('mesh-ny').value) || 30;
+  const lx = parseFloat(document.getElementById('dom-x').value) || 1;
+  const ly = parseFloat(document.getElementById('dom-y').value) || 1;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#060a0d';
+  ctx.fillRect(0, 0, W, H);
+
+  const pad = 20, drawW = W - 2*pad, drawH = H - 2*pad;
+  const scaleX = drawW / lx, scaleY = drawH / ly;
+
+  // Grid lines
+  const stepX = nx <= 40 ? 1 : Math.ceil(nx / 40);
+  const stepY = ny <= 40 ? 1 : Math.ceil(ny / 40);
+  const dx = lx / nx, dy = ly / ny;
+
+  ctx.strokeStyle = 'rgba(10,132,255,0.2)';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= nx; i += stepX) {
+    const x = pad + i * dx * scaleX;
+    ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, pad + drawH); ctx.stroke();
+  }
+  for (let j = 0; j <= ny; j += stepY) {
+    const y = pad + j * dy * scaleY;
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(pad + drawW, y); ctx.stroke();
+  }
+
+  // Border
+  ctx.strokeStyle = 'rgba(10,132,255,0.8)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(pad, pad, drawW, drawH);
+
+  // BC patches (colored walls)
+  const patchColors = { left:'rgba(255,70,70,.7)', right:'rgba(70,130,255,.7)',
+    top:'rgba(255,200,50,.5)', bottom:'rgba(50,200,80,.5)' };
+  const patchLocs = { left:[pad,pad,3,drawH], right:[pad+drawW-3,pad,3,drawH],
+    top:[pad,pad,drawW,3], bottom:[pad,pad+drawH-3,drawW,3] };
+  for (const bc of activeBCs) {
+    if (patchColors[bc.patch]) {
+      ctx.fillStyle = patchColors[bc.patch];
+      ctx.fillRect(...patchLocs[bc.patch]);
+    }
+  }
+
+  // Dimension labels
+  ctx.fillStyle = 'rgba(100,210,255,.7)';
+  ctx.font = '9px JetBrains Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(`Lx=${lx}m  nx=${nx}`, W/2, H-4);
+  ctx.textAlign = 'left';
+  ctx.save(); ctx.translate(8, H/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText(`Ly=${ly}m  ny=${ny}`, 0, 0);
+  ctx.restore();
+
+  // Cell count
+  const cells = nx * ny * (document.getElementById('mesh-dim').value === '3d' ?
+    (parseInt(document.getElementById('mesh-nz').value)||10) : 1);
+  ctx.fillStyle = 'rgba(10,132,255,.9)';
+  ctx.font = 'bold 10px JetBrains Mono, monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(`${cells.toLocaleString()} cells`, W-4, 14);
+}
+
+// ── BC PREVIEW CANVAS ──
+function updateBCPreview() {
+  const canvas = document.getElementById('bc-preview');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width = canvas.offsetWidth || 240;
+  const H = canvas.height = 170;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#060a0d';
+  ctx.fillRect(0, 0, W, H);
+
+  const pad = 20, drawW = W - 2*pad, drawH = H - 2*pad;
+
+  // Background domain
+  ctx.fillStyle = '#0a1520';
+  ctx.fillRect(pad, pad, drawW, drawH);
+  ctx.strokeStyle = 'rgba(10,132,255,.4)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad, pad, drawW, drawH);
+
+  // Interior gradient hint
+  const gradient = ctx.createLinearGradient(pad, 0, pad+drawW, 0);
+  gradient.addColorStop(0, 'rgba(255,100,50,.35)');
+  gradient.addColorStop(1, 'rgba(50,100,255,.35)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(pad+3, pad+3, drawW-6, drawH-6);
+
+  const colorMap = {
+    dirichlet: '#ff4646', neumann: '#32d74b',
+    wall: '#8888aa', inlet: '#ff9f0a', outlet: '#64d2ff'
+  };
+  const legend = {};
+
+  for (const bc of activeBCs) {
+    const col = colorMap[bc.type] || '#ffffff';
+    ctx.fillStyle = col;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = col;
+    legend[bc.type] = col;
+    if (bc.patch === 'left')   { ctx.fillRect(pad-2, pad, 6, drawH); }
+    if (bc.patch === 'right')  { ctx.fillRect(pad+drawW-4, pad, 6, drawH); }
+    if (bc.patch === 'top')    { ctx.fillRect(pad, pad-2, drawW, 6); }
+    if (bc.patch === 'bottom') { ctx.fillRect(pad, pad+drawH-4, drawW, 6); }
+    // Label value
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    const val = bc.type === 'dirichlet' ? `${bc.value}°` : bc.type;
+    if (bc.patch === 'left')   ctx.fillText(val, pad+12, H/2);
+    if (bc.patch === 'right')  ctx.fillText(val, pad+drawW-12, H/2);
+    if (bc.patch === 'top')    ctx.fillText(val, W/2, pad+10);
+    if (bc.patch === 'bottom') ctx.fillText(val, W/2, pad+drawH-4);
+  }
+
+  // Arrows showing flow direction (for inlet patches)
+  const inlet = activeBCs.find(b => b.patch === 'left' || b.type === 'inlet');
+  if (inlet) {
+    ctx.strokeStyle = 'rgba(255,200,80,.6)';
+    ctx.lineWidth = 1.5;
+    for (let j = 0; j < 5; j++) {
+      const yy = pad + (j+1) * drawH/6;
+      ctx.beginPath(); ctx.moveTo(pad+10, yy); ctx.lineTo(pad+40, yy);
+      ctx.lineTo(pad+35, yy-4); ctx.moveTo(pad+40, yy); ctx.lineTo(pad+35, yy+4);
+      ctx.stroke();
+    }
+  }
+
+  // Legend
+  let legendText = '';
+  for (const [type, col] of Object.entries(legend)) {
+    legendText += `■ ${type}  `;
+  }
+  document.getElementById('bc-legend').textContent = legendText || 'No BCs added yet';
+}
+
+// ── MESH ──
 async function createMesh() {
-    try {
-        ui.log('Creating mesh...');
-        
-        const nx = parseInt(document.getElementById('mesh-nx').value);
-        const ny = parseInt(document.getElementById('mesh-ny').value);
-        const nz = parseInt(document.getElementById('mesh-nz').value);
-        const meshType = document.getElementById('mesh-type').value;
-        const domain = [
-            parseFloat(document.getElementById('domain-x').value),
-            parseFloat(document.getElementById('domain-y').value),
-            parseFloat(document.getElementById('domain-z').value)
-        ];
+  const nx = parseInt(document.getElementById('mesh-nx').value);
+  const ny = parseInt(document.getElementById('mesh-ny').value);
+  const nz = document.getElementById('mesh-dim').value === '3d' ?
+    parseInt(document.getElementById('mesh-nz').value) : 1;
+  const lx = parseFloat(document.getElementById('dom-x').value);
+  const ly = parseFloat(document.getElementById('dom-y').value);
+  const lz = document.getElementById('mesh-dim').value === '3d' ?
+    parseFloat(document.getElementById('dom-z').value) : 1.0;
 
-        const result = await api.createMesh(nx, ny, nz, domain, meshType);
-        
-        ui.log(`Mesh created: ${result.message}`);
-        document.getElementById('mesh-info').innerHTML = `
-            <strong>Mesh Info:</strong><br>
-            Size: ${result.mesh.nx} x ${result.mesh.ny} x ${result.mesh.nz}<br>
-            Domain: ${result.mesh.domain.join(' x ')} m<br>
-            Cells: ${result.mesh.num_cells}
-        `;
-        
-        ui.updateProperties({
-            mesh: `${nx}x${ny}x${nz}`
-        });
+  // Progress animation
+  const bar = document.getElementById('mesh-prog');
+  document.getElementById('mesh-prog-wrap').style.display = 'block';
+  let pct = 0;
+  const pInterval = setInterval(() => { pct = Math.min(pct+10, 80); bar.style.width = pct+'%'; }, 100);
 
-    } catch (error) {
-        ui.showError(`Mesh creation failed: ${error.message}`);
-        ui.log(`ERROR: ${error.message}`);
+  log(`Creating mesh: ${nx}×${ny}×${nz}...`);
+  setStatus('Creating mesh...');
+  try {
+    const r = await fetch(`${API}/api/mesh/create`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ nx, ny, nz, domain: [lx, ly, lz] })
+    });
+    const d = await r.json();
+    clearInterval(pInterval); bar.style.width = '100%';
+    setTimeout(() => { document.getElementById('mesh-prog-wrap').style.display='none'; bar.style.width='0'; }, 600);
+
+    if (d.status === 'success') {
+      currentMesh = d.mesh;
+      const cells = nx * ny * nz;
+      document.getElementById('mesh-info').innerHTML =
+        `Grid: ${nx}×${ny}×${nz}<br>Cells: ${cells.toLocaleString()}<br>dx: ${(lx/nx).toFixed(4)} m<br>dy: ${(ly/ny).toFixed(4)} m`;
+      // Update props
+      setEl('pp-mesh', `${nx}×${ny}×${nz}`);
+      setEl('pp-cells', cells.toLocaleString());
+      setEl('st-grid', `${nx}×${ny}×${nz}`);
+      setEl('st-cells', cells.toLocaleString());
+      setEl('st-dx', (lx/nx).toFixed(4)+' m');
+      setEl('st-dy', (ly/ny).toFixed(4)+' m');
+      setEl('st-mtype', document.getElementById('mesh-type').value);
+      log(`Mesh created: ${cells.toLocaleString()} cells`, 'success');
+      setStatus('Mesh OK', 'ok');
+      toast('Mesh generated', 'ok');
+      updateMeshPreview();
+    } else {
+      log('Mesh error: ' + d.message, 'error');
+      setStatus('Mesh failed', 'er');
     }
+  } catch(e) {
+    clearInterval(pInterval);
+    log('Mesh error: ' + e.message, 'error');
+    setStatus('Error', 'er');
+  }
+}
+
+// ── SOLVER ──
+function onSolverChange() {
+  const v = document.getElementById('solver-type').value;
+  const descs = {
+    laplacianFoam: 'Heat diffusion: dT/dt = α∇²T. Hot wall → Cold wall temperature distribution.',
+    simpleFoam: 'Steady incompressible NS. Lid-driven cavity flow. SIMPLE algorithm.',
+    icoFoam: 'Transient incompressible laminar. Channel flow with inlet/outlet BCs.',
+    pisoFoam: 'Transient incompressible. PISO pressure-velocity coupling.'
+  };
+  document.getElementById('solver-desc').textContent = descs[v] || '';
+  const lbl = document.querySelector('.finp + .finp, #nu').previousSibling;
+  document.querySelector('.flbl').textContent = v === 'laplacianFoam' ? 'α (thermal)' : 'ν (viscosity)';
 }
 
 async function createSolver() {
-    try {
-        ui.log('Creating solver...');
-        
-        const solverType = document.getElementById('solver-type').value;
-        const config = {
-            nu: parseFloat(document.getElementById('nu').value),
-            rho: parseFloat(document.getElementById('rho').value),
-            dt: parseFloat(document.getElementById('dt').value),
-            end_time: parseFloat(document.getElementById('end-time').value),
-            turbulence_model: document.getElementById('turbulence-model').value
-        };
+  if (!currentMesh) { log('Create mesh first', 'error'); toast('Create mesh first','er'); return; }
+  const type = document.getElementById('solver-type').value;
+  const nu = parseFloat(document.getElementById('nu').value);
+  const cfg = type === 'laplacianFoam' ? {alpha: nu} : {nu};
 
-        const result = await api.createSolver(solverType, config);
-        
-        ui.log(`Solver created: ${result.message}`);
-        ui.updateProperties({
-            solver: solverType
-        });
-
-    } catch (error) {
-        ui.showError(`Solver creation failed: ${error.message}`);
-        ui.log(`ERROR: ${error.message}`);
+  log(`Initializing ${type}...`);
+  try {
+    const r = await fetch(`${API}/api/solver/create`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ type, config: cfg })
+    });
+    const d = await r.json();
+    if (d.status === 'success') {
+      currentSolver = type;
+      setEl('pp-solver', type);
+      setEl('pp-nu', nu);
+      setEl('st-solver', type);
+      setEl('rp-solver', type);
+      log(`${type} initialized`, 'success');
+      setStatus('Solver ready', 'ok');
+      toast('Solver ready', 'ok');
+    } else {
+      log('Solver error: ' + d.message, 'error');
     }
+  } catch(e) { log('Solver error: ' + e.message, 'error'); }
 }
 
-async function initializeFields() {
-    try {
-        ui.log('Initializing fields...');
-        
-        const U = [
-            parseFloat(document.getElementById('U-x').value),
-            parseFloat(document.getElementById('U-y').value),
-            parseFloat(document.getElementById('U-z').value)
-        ];
-        const p = parseFloat(document.getElementById('p-init').value);
-        const T = parseFloat(document.getElementById('T-init').value);
+// ── BOUNDARY CONDITIONS ──
+async function addBC() {
+  const patch = document.getElementById('bc-patch').value;
+  const type  = document.getElementById('bc-type').value;
+  const value = parseFloat(document.getElementById('bc-val').value);
 
-        const result = await api.initializeFields(U, p, T);
-        
-        ui.log('Fields initialized successfully');
+  const locMap = { left:'x_min', right:'x_max', top:'y_max', bottom:'y_min', front:'z_min', back:'z_max' };
 
-    } catch (error) {
-        ui.showError(`Field initialization failed: ${error.message}`);
-        ui.log(`ERROR: ${error.message}`);
+  log(`Setting BC: ${patch} = ${type} (${value})`);
+  try {
+    const r = await fetch(`${API}/api/bc/set`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ patch, type, value, location: locMap[patch] })
+    });
+    const d = await r.json();
+    if (d.status === 'success') {
+      // Update local BC list
+      activeBCs = activeBCs.filter(b => b.patch !== patch);
+      activeBCs.push({ patch, type, value });
+      renderBCTable();
+      updateBCPreview();
+      setEl('pp-bc', activeBCs.length);
+      log(`BC set: ${patch} → ${type} = ${value}`, 'success');
+      toast(`BC: ${patch} set`, 'ok');
+    } else {
+      log('BC error: ' + d.message, 'error');
     }
+  } catch(e) { log('BC error: ' + e.message, 'error'); }
 }
 
-function updateBC(button) {
-    const row = button.parentElement.parentElement;
-    const patch = row.cells[0].textContent;
-    const type = row.cells[1].querySelector('select').value;
-    const value = row.cells[2].querySelector('input').value;
-
-    api.setBoundaryCondition(patch, type, value)
-        .then(result => {
-            ui.log(`BC updated: ${patch} (${type})`);
-        })
-        .catch(error => {
-            ui.showError(`BC update failed: ${error.message}`);
-        });
+function renderBCTable() {
+  const tbody = document.getElementById('bc-list');
+  tbody.innerHTML = '';
+  for (const bc of activeBCs) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${bc.patch}</td><td>${bc.type}</td><td>${bc.type==='dirichlet'||bc.type==='inlet'?bc.value:'—'}</td>
+      <td><button class="bc-del" onclick="removeBC('${bc.patch}')">✕</button></td>`;
+    tbody.appendChild(tr);
+  }
+}
+function removeBC(patch) {
+  activeBCs = activeBCs.filter(b => b.patch !== patch);
+  renderBCTable();
+  updateBCPreview();
+  setEl('pp-bc', activeBCs.length);
 }
 
-function addPatch() {
-    const patchName = prompt('Patch name:');
-    if (patchName) {
-        ui.addBCRow(patchName, 'dirichlet', '0');
-    }
+async function initFields() {
+  const T = parseFloat(document.getElementById('T-init').value);
+  const p = parseFloat(document.getElementById('p-init').value);
+  const ux = parseFloat(document.getElementById('Ux').value);
+  const uy = parseFloat(document.getElementById('Uy').value);
+  try {
+    const r = await fetch(`${API}/api/fields/initialize`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ T, p, U:[ux,uy,0] })
+    });
+    const d = await r.json();
+    if (d.status === 'success') { log('Fields initialized', 'success'); toast('Fields initialized','ok'); }
+    else log('Init error: ' + d.message, 'error');
+  } catch(e) { log('Init error: ' + e.message, 'error'); }
 }
 
-let simulationRunning = false;
-let monitorTimer = null;
-
+// ── SIMULATION ──
 async function runSimulation() {
-    if (simulationRunning) return;
+  if (!currentMesh)  { log('Create mesh first', 'error');   toast('Need mesh first','er'); return; }
+  if (!currentSolver){ log('Create solver first', 'error'); toast('Need solver first','er'); return; }
 
+  const maxIters = parseInt(document.getElementById('max-iters').value);
+  const tolerance = parseFloat(document.getElementById('tolerance').value);
+
+  // Disable run, enable stop
+  document.getElementById('btn-run').disabled = true;
+  document.getElementById('btn-stop').disabled = false;
+  document.getElementById('run-btn').disabled = true;
+  document.getElementById('stop-btn').disabled = false;
+  document.getElementById('run-prog-sec').style.display = 'block';
+
+  setStatus('Running simulation...', '');
+  setEl('rp-status', 'running');
+  setEl('mon-status', 'running');
+  log(`Running ${currentSolver}: ${maxIters} iters...`);
+  startTime = Date.now();
+  residualHistory = {};
+
+  // Progress animation (fake, since backend is synchronous)
+  const progBar = document.getElementById('run-prog');
+  let fakeP = 0;
+  const fakeTimer = setInterval(() => {
+    fakeP = Math.min(fakeP + 1, 90);
+    progBar.style.width = fakeP + '%';
+  }, maxIters * 3);
+
+  // Monitor timer
+  monTimer = setInterval(async () => {
     try {
-        simulationRunning = true;
-        document.getElementById('btn-run').disabled = true;
-        document.getElementById('btn-pause').disabled = false;
-        document.getElementById('btn-stop').disabled = false;
-        
-        const maxIters = parseInt(document.getElementById('max-iters').value);
-        const dt = parseFloat(document.getElementById('dt').value);
-        const tolerance = parseFloat(document.getElementById('tolerance').value);
-        const sampleInterval = parseInt(document.getElementById('sample-interval').value);
-
-        // Adjust for 3D meshes
-        let adjustedMaxIters = maxIters;
-        try {
-            const meshInfo = await api.getMeshInfo();
-            if (meshInfo && meshInfo.mesh && meshInfo.mesh.nz > 1) {
-                adjustedMaxIters = Math.max(maxIters, 500); // Ensure at least 500 iterations for 3D
-                ui.log(`3D mesh detected, adjusting max iterations to ${adjustedMaxIters}`);
-            }
-        } catch (e) {
-            // Ignore mesh info error
+      const sr = await fetch(`${API}/api/simulate/status`);
+      const sd = await sr.json();
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      setEl('monitor-iteration', sd.iterations || 0);
+      setEl('mon-iter', sd.iterations || 0);
+      setEl('mon-time', elapsed + 's');
+      setEl('rp-iter', sd.iterations || 0);
+      setEl('rp-time', elapsed + 's');
+      if (sd.residuals) {
+        const r = sd.residuals;
+        const rval = r.T ?? r.U ?? r.p ?? 0;
+        if (rval !== null) {
+          const rv = typeof rval === 'number' ? rval.toExponential(2) : '—';
+          setEl('rp-res', rv);
+          setEl('mon-res', rv);
+          setEl('monitor-residual-t', rv);
+          // Accumulate for chart
+          const key = Object.keys(sd.residuals).find(k => sd.residuals[k] != null);
+          if (key) {
+            if (!residualHistory[key]) residualHistory[key] = [];
+            residualHistory[key].push(rval);
+            drawResidualChart();
+            drawMiniResidual();
+          }
         }
+      }
+    } catch(e) {}
+  }, 500);
 
-        ui.log(`Starting simulation: ${adjustedMaxIters} iterations, dt=${dt}, tol=${tolerance}`);
-        ui.updateProperties({ status: 'Running...' });
+  try {
+    const r = await fetch(`${API}/api/simulate/run`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ max_iters: maxIters, tolerance })
+    });
+    const d = await r.json();
 
-        const startTime = Date.now();
+    clearInterval(fakeTimer);
+    clearInterval(monTimer);
+    monTimer = null;
+    progBar.style.width = '100%';
+    setTimeout(() => { document.getElementById('run-prog-sec').style.display='none'; progBar.style.width='0'; }, 800);
 
-        // Start monitoring timer
-        monitorTimer = setInterval(async () => {
-            try {
-                const status = await api.getSimulationStatus();
-                document.getElementById('monitor-iteration').textContent = status.iterations || 0;
-                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-                document.getElementById('monitor-time').textContent = elapsed + 's';
+    if (d.status === 'success') {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      log(`Simulation done: ${d.iterations} iters, converged=${d.converged}, ${elapsed}s`, 'success');
+      setStatus(`Done: ${d.iterations} iters`, 'ok');
+      toast('Simulation complete!', 'ok');
+      setEl('rp-status', d.converged ? 'converged ✓' : 'done');
+      setEl('mon-status', d.converged ? 'converged' : 'done');
+      setEl('st-iters', d.iterations);
+      setEl('st-conv', d.converged ? 'Yes ✓' : 'No');
 
-                if (status.residuals) {
-                    // T residual (laplacianFoam)
-                    const resT = status.residuals.T;
-                    if (resT !== null && resT !== undefined) {
-                        document.getElementById('monitor-residual-t').textContent = resT.toExponential(3);
-                    }
-                }
-            } catch (e) {
-                // Ignore polling errors during simulation
-            }
-        }, 500);
-
-        const result = await api.runSimulation(adjustedMaxIters, dt, tolerance, sampleInterval);
-
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        ui.log(`Simulation completed in ${elapsed}s`);
-        ui.log(`Converged: ${result.converged}, Iterations: ${result.iterations}`);
-        ui.updateProperties({
-            status: result.converged ? 'Converged' : 'Completed',
-            converged: result.converged ? 'Yes' : 'No'
-        });
-
-        // Update monitor with final residuals
-        if (result.residuals && result.residuals.T && result.residuals.T.length > 0) {
-            document.getElementById('monitor-residual-t').textContent = result.residuals.T[result.residuals.T.length - 1].toFixed(2);
+      // Store final residuals
+      if (d.residuals) {
+        for (const [k, v] of Object.entries(d.residuals)) {
+          if (!residualHistory[k]) residualHistory[k] = [];
+          residualHistory[k].push(...v);
         }
+        drawResidualChart();
+        drawMiniResidual();
 
-        ui.updateProgress(100);
+        // Update stat panel
+        const last = d.residuals;
+        if (last.T && last.T.length) setEl('st-resT', last.T[last.T.length-1].toExponential(3));
+        if (last.U && last.U.length) setEl('st-resU', last.U[last.U.length-1].toExponential(3));
+      }
 
-    } catch (error) {
-        ui.showError(`Simulation failed: ${error.message}`);
-        ui.log(`ERROR: ${error.message}`);
-    } finally {
-        simulationRunning = false;
-        if (monitorTimer) {
-            clearInterval(monitorTimer);
-            monitorTimer = null;
-        }
-        document.getElementById('btn-run').disabled = false;
-        document.getElementById('btn-pause').disabled = true;
-        document.getElementById('btn-stop').disabled = true;
+      // Auto-visualize
+      await visualizeField();
+
+    } else {
+      log('Simulation error: ' + d.message, 'error');
+      setStatus('Simulation failed', 'er');
+      toast('Simulation failed', 'er');
     }
-}
-
-function pauseSimulation() {
-    simulationRunning = false;
-    ui.log('Simulation paused');
-}
-
-function stopSimulation() {
-    simulationRunning = false;
-    ui.log('Simulation stopped');
+  } catch(e) {
+    clearInterval(fakeTimer);
+    clearInterval(monTimer);
+    log('Run error: ' + e.message, 'error');
+    setStatus('Error', 'er');
+  } finally {
     document.getElementById('btn-run').disabled = false;
-    document.getElementById('btn-pause').disabled = true;
     document.getElementById('btn-stop').disabled = true;
+    document.getElementById('run-btn').disabled = false;
+    document.getElementById('stop-btn').disabled = true;
+  }
+}
+
+function stopSim() {
+  if (monTimer) { clearInterval(monTimer); monTimer = null; }
+  log('Simulation stop requested', 'warn');
+  document.getElementById('btn-stop').disabled = true;
+  document.getElementById('btn-run').disabled = false;
+}
+
+// ── VISUALIZATION ──
+function selectField(f) {
+  activeField = f;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+  const chip = document.getElementById('chip-' + f);
+  if (chip) chip.classList.add('on');
+  setEl('cb-field', f + (f==='T'?' [°C]':f==='p'?' [Pa]':' [m/s]'));
+  visualizeField();
 }
 
 async function visualizeField() {
-    try {
-        const fieldName = document.getElementById('viz-field').value;
-        ui.log(`Fetching field: ${fieldName}...`);
-
-        const result = await api.getHeatmap(fieldName);
-
-        if (!result || !result.heatmap || !result.heatmap.data) {
-            throw new Error('Invalid heatmap response from server');
-        }
-
-        ui.switchPanel('postprocess');
-
-        const hm = result.heatmap;
-        const shape = hm.shape || [1, hm.data.length, (hm.data[0] || []).length];
-        let nz = shape[0], ny = shape[1], nx = shape[2];
-
-        // For 2D meshes (nz=1), extrude data into a 3D slab for 3D visualization
-        // Data from backend is always [nz][ny][nx]
-        let data3d = hm.data;
-        let vizNz = nz;
-        const EXTRUDE_LAYERS = 8; // Extrude 2D slab to N layers for visual depth
-        if (nz === 1) {
-            // Duplicate the single layer EXTRUDE_LAYERS times
-            data3d = [];
-            for (let k = 0; k < EXTRUDE_LAYERS; k++) {
-                data3d.push(hm.data[0].map(row => [...row]));
-            }
-            vizNz = EXTRUDE_LAYERS;
-            ui.log(`2D mesh extruded to ${EXTRUDE_LAYERS} layers for 3D visualization`);
-        }
-
-        const hm3d = { ...hm, data: data3d, shape: [vizNz, ny, nx], is_3d: true };
-
-        // Always show 3D canvas
-        const canvas3d = document.getElementById('canvas-3d');
-        const canvasViz = document.getElementById('canvas-viz');
-        const viz3dSection = document.getElementById('viz-3d-section');
-
-        canvas3d.style.display = 'block';
-        canvasViz.style.display = 'none';
-
-        if (viz3dSection) {
-            viz3dSection.style.display = 'block';
-            const sliceInput = document.getElementById('slice-index');
-            if (sliceInput) {
-                sliceInput.max = vizNz - 1;
-                sliceInput.value = Math.floor(vizNz / 2);
-                const sv = document.getElementById('slice-value');
-                if (sv) sv.textContent = sliceInput.value;
-            }
-        }
-
-        // Initialize 3D viz if needed
-        if (!viz3d) initialize3DVisualization('canvas-3d');
-        window.render3DHeatmap(hm3d, { nx, ny, nz: vizNz });
-        ui.log(`3D heatmap rendered: ${fieldName} (${nx}×${ny}×${nz === 1 ? '1→' + vizNz + ' extruded' : vizNz}), range [${hm.min.toFixed(3)}, ${hm.max.toFixed(3)}]`);
-
-        // Also render 2D canvas for reference
-        canvasViz.style.display = 'block';
-        // Build flat 2D slice from first layer
-        const hm2d = { data: hm.data[0], min: hm.min, max: hm.max };
-        renderHeatmap(hm2d);
-
-        // Update ParaView stats
-        updateParaViewPanel(hm, fieldName, nx, ny, nz, nz > 1);
-
-    } catch (error) {
-        ui.showError(`Visualization failed: ${error.message}`);
-        ui.log(`ERROR: ${error.message}`);
+  try {
+    const r = await fetch(`${API}/api/results/heatmap3d?field=${activeField}`);
+    const d = await r.json();
+    if (!d || d.status !== 'success' || !d.heatmap) {
+      log('Viz error: ' + (d.message || 'no data'), 'error');
+      return;
     }
+    const hm = d.heatmap;
+    lastHeatmap = hm;
+
+    const shape = hm.shape || [1, hm.data.length, (hm.data[0]||[]).length];
+    let [nz, ny, nx] = shape;
+
+    // Always extrude 2D to 3D for visualization (8 layers)
+    let data3d = hm.data;
+    const EXTRUDE = 8;
+    if (nz === 1) {
+      data3d = [];
+      for (let k = 0; k < EXTRUDE; k++) data3d.push(hm.data[0].map(r => [...r]));
+      nz = EXTRUDE;
+    }
+    const hm3d = { ...hm, data: data3d, shape: [nz, ny, nx], is_3d: true };
+
+    // ── Center 3D viewport ──
+    if (!viz3d) viz3d = new Visualization3D('canvas-3d');
+    viz3d.render3DHeatmap(hm3d, { nx, ny, nz });
+    const sliceEl = document.getElementById('slice-bar');
+    sliceEl.classList.add('show');
+    document.getElementById('slice-idx').max = nz - 1;
+    document.getElementById('slice-idx').value = Math.floor(nz / 2);
+    document.getElementById('slice-disp').textContent = Math.floor(nz / 2);
+
+    // ── Right panel 3D mini ──
+    if (!rightViz3d) rightViz3d = new Visualization3D('right-canvas-3d');
+    rightViz3d.render3DHeatmap(hm3d, { nx, ny, nz });
+
+    // ── 2D heatmap ──
+    const hm2d = { data: hm.data[0], min: hm.min, max: hm.max };
+    renderHeatmap(hm2d);
+    renderHeatmapTo('right-canvas-2d', hm2d);
+
+    // ── Colorbar ──
+    drawColorbar(hm.min, hm.max);
+    setEl('cb-max', hm.max.toFixed(2));
+    setEl('cb-min', hm.min.toFixed(2));
+
+    // ── Stats ──
+    setEl('st-field', activeField);
+    setEl('st-min', hm.min.toFixed(4));
+    setEl('st-max', hm.max.toFixed(4));
+    setEl('st-range', (hm.max - hm.min).toFixed(4));
+    setEl('pp-tmin', hm.min.toFixed(2));
+    setEl('pp-tmax', hm.max.toFixed(2));
+
+    // Flat array for mean/std
+    const flat = hm.data.flat(Infinity).filter(v => isFinite(v));
+    const mean = flat.reduce((a,b) => a+b, 0) / flat.length;
+    const std  = Math.sqrt(flat.reduce((a,b) => a+(b-mean)**2, 0) / flat.length);
+    setEl('st-mean', mean.toFixed(4));
+    setEl('st-std', std.toFixed(4));
+
+    log(`${activeField}: min=${hm.min.toFixed(2)} max=${hm.max.toFixed(2)} mean=${mean.toFixed(2)}`, 'success');
+
+    // Mark badges
+    document.getElementById('rbdg-viz').className = 'rnav-badge ok';
+    document.getElementById('rbdg-stats').className = 'rnav-badge ok';
+
+  } catch(e) {
+    log('Visualization error: ' + e.message, 'error');
+  }
 }
 
-function applySlice() {
-    const axis = document.getElementById('slice-axis');
-    const index = document.getElementById('slice-index');
-    if (axis && index && typeof setSlice === 'function') {
-        setSlice(axis.value, parseInt(index.value, 10));
+// ── Colormap ──
+function getColormapFn() {
+  const cm = document.getElementById('colormap')?.value || 'rainbow';
+  return (t) => {
+    t = Math.max(0, Math.min(1, t));
+    if (cm === 'rainbow')  return `hsl(${(1-t)*240},100%,${40+t*15}%)`;
+    if (cm === 'coolwarm') {
+      const r = t<.5 ? Math.round(130+t*250) : 255;
+      const b = t>.5 ? Math.round(255-(t-.5)*500) : 255;
+      const g = Math.round(50 + t*50);
+      return `rgb(${r},${g},${b})`;
     }
+    if (cm === 'turbo') {
+      const r = Math.round(255 * Math.max(0,Math.min(1, t < .5 ? 2*t : 2-2*t + .5)));
+      const g = Math.round(255 * Math.max(0,Math.min(1, t < .25 ? 4*t : t<.75 ? 1 : 4-4*t)));
+      const b = Math.round(255 * Math.max(0,Math.min(1, t < .5 ? 1-2*t : 0)));
+      return `rgb(${r},${g},${b})`;
+    }
+    // viridis approx
+    const r = Math.round(255*(0.267+0.005*t+2.33*t*t-1.52*t*t*t));
+    const g = Math.round(255*(0.005+1.1*t-0.3*t*t));
+    const b = Math.round(255*(0.33+0.78*t-0.78*t*t));
+    return `rgb(${Math.max(0,Math.min(255,r))},${Math.max(0,Math.min(255,g))},${Math.max(0,Math.min(255,b))})`;
+  };
 }
 
-function updateParaViewPanel(hm, fieldName, nx, ny, nz, is3D) {
-    const panel = document.getElementById('paraview-panel');
-    if (!panel) return;
-    panel.style.display = 'block';
+function renderHeatmapTo(canvasId, hm) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let data = hm.data;
+  if (Array.isArray(data[0]) && Array.isArray(data[0][0])) data = data[Math.floor(data.length/2)];
+  const rows = data.length, cols = data[0]?.length || 0;
+  if (!cols) return;
+  canvas.width = canvas.offsetWidth || 260;
+  canvas.height = canvas.offsetHeight || 180;
+  const cw = canvas.width/cols, ch = canvas.height/rows;
+  const range = hm.max - hm.min;
+  const colorFn = getColormapFn();
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      const v = data[i][j];
+      const norm = isFinite(v) && range > 1e-6 ? (v-hm.min)/range : .5;
+      ctx.fillStyle = colorFn(norm);
+      ctx.fillRect(j*cw, i*ch, cw+1, ch+1);
+    }
+  }
+}
 
-    const range = hm.max - hm.min;
-    const mean = (hm.min + hm.max) / 2;
+function drawColorbar(min, max) {
+  const canvas = document.getElementById('cb-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const H = 150, W = 18;
+  canvas.width = W; canvas.height = H;
+  const colorFn = getColormapFn();
+  for (let i = 0; i < H; i++) {
+    ctx.fillStyle = colorFn(1 - i/H);
+    ctx.fillRect(0, i, W, 1);
+  }
+}
 
-    // Compute simple histogram (10 bins)
-    const bins = 10;
-    const counts = new Array(bins).fill(0);
-    const flat = hm.data.flat(Infinity);
-    flat.forEach(v => {
-        const b = range > 0 ? Math.min(bins-1, Math.floor((v - hm.min)/range * bins)) : 0;
-        counts[b]++;
+// ── Residual Charts ──
+function drawResidualChart() {
+  const canvas = document.getElementById('residual-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width = canvas.offsetWidth || 500;
+  const H = canvas.height = canvas.offsetHeight || 200;
+  ctx.fillStyle = '#080b0e'; ctx.fillRect(0,0,W,H);
+
+  const colors = { T:'#ff6b35', U:'#32d74b', p:'#64d2ff' };
+  const pad = 40;
+
+  ctx.strokeStyle = 'rgba(54,60,68,.5)'; ctx.lineWidth = .5;
+  for (let i=0;i<5;i++) {
+    const y = pad + (H-2*pad)*i/4;
+    ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(W-pad,y); ctx.stroke();
+  }
+
+  let hasData = false;
+  for (const [key, vals] of Object.entries(residualHistory)) {
+    if (!vals.length) continue;
+    hasData = true;
+    const maxV = Math.max(...vals.filter(isFinite)) || 1;
+    const minV = Math.min(...vals.filter(v=>v>0&&isFinite(v))) || 1e-10;
+    ctx.strokeStyle = colors[key] || '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    vals.forEach((v, i) => {
+      const x = pad + (W-2*pad)*i/Math.max(1, vals.length-1);
+      const logV = Math.log10(Math.max(v, minV));
+      const logMax = Math.log10(maxV), logMin = Math.log10(minV);
+      const y = H - pad - (H-2*pad)*(logV-logMin)/(logMax-logMin+1e-10);
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
     });
-    const maxCount = Math.max(...counts);
+    ctx.stroke();
 
-    const histBars = counts.map((c, i) => {
-        const pct = maxCount > 0 ? (c/maxCount*100).toFixed(0) : 0;
-        const hue = Math.round((1 - (i+0.5)/bins)*240);
-        return `<div style="display:inline-block;width:${100/bins}%;height:${pct}%;background:hsl(${hue},90%,45%);vertical-align:bottom;border:1px solid rgba(255,255,255,0.1);" title="${c} cells"></div>`;
-    }).join('');
+    // Label
+    ctx.fillStyle = colors[key]||'#fff';
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.fillText(key, W-pad-30, pad+12+Object.keys(residualHistory).indexOf(key)*14);
+  }
 
-    panel.innerHTML = `
-        <div class="pv-header">
-            <span class="pv-title">&#9632; ParaView-style Information</span>
-            <button onclick="document.getElementById('paraview-panel').style.display='none'" style="float:right;background:none;border:none;cursor:pointer;font-size:16px;">&#x2715;</button>
-        </div>
-        <div class="pv-grid">
-            <div class="pv-block">
-                <h4>Field Info</h4>
-                <table class="pv-table">
-                    <tr><td>Field</td><td><b>${fieldName}</b></td></tr>
-                    <tr><td>Dimensions</td><td>${is3D ? nx+'×'+ny+'×'+nz+' (3D)' : nx+'×'+ny+' (2D)'}</td></tr>
-                    <tr><td>Cells</td><td>${(nx*ny*Math.max(nz,1)).toLocaleString()}</td></tr>
-                </table>
-            </div>
-            <div class="pv-block">
-                <h4>Statistics</h4>
-                <table class="pv-table">
-                    <tr><td>Min</td><td><b>${hm.min.toFixed(4)}</b></td></tr>
-                    <tr><td>Max</td><td><b>${hm.max.toFixed(4)}</b></td></tr>
-                    <tr><td>Range</td><td>${range.toFixed(4)}</td></tr>
-                    <tr><td>Mean &#x2248;</td><td>${mean.toFixed(4)}</td></tr>
-                </table>
-            </div>
-            <div class="pv-block pv-hist-block">
-                <h4>Value Distribution</h4>
-                <div style="height:60px;display:flex;align-items:flex-end;background:#1a1a2e;border-radius:4px;padding:4px;overflow:hidden;">
-                    ${histBars}
-                </div>
-                <div style="display:flex;justify-content:space-between;font-size:10px;color:#888;margin-top:2px;">
-                    <span>${hm.min.toFixed(2)}</span><span>${hm.max.toFixed(2)}</span>
-                </div>
-            </div>
-        </div>
-    `;
+  if (!hasData) {
+    ctx.fillStyle = 'rgba(100,120,140,.5)';
+    ctx.font = '12px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('No residual data — run simulation', W/2, H/2);
+  }
+
+  // Axes
+  ctx.strokeStyle = 'rgba(54,60,68,.8)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad,pad); ctx.lineTo(pad,H-pad); ctx.lineTo(W-pad,H-pad); ctx.stroke();
+  ctx.fillStyle = 'rgba(100,120,140,.6)'; ctx.font = '9px JetBrains Mono,monospace'; ctx.textAlign='center';
+  ctx.fillText('Iterations', W/2, H-6);
+  ctx.save(); ctx.translate(12, H/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText('Residual (log)', 0, 0); ctx.restore();
 }
 
-async function exportResults() {
-    try {
-        const formats = [];
-        document.querySelectorAll('.export-options input:checked').forEach(cb => {
-            formats.push(cb.value);
-        });
-
-        if (formats.length === 0) {
-            alert('Select at least one format');
-            return;
-        }
-
-        ui.log(`Exporting to: ${formats.join(', ')}`);
-        
-        for (const fmt of formats) {
-            const result = await api.exportResults(fmt);
-            ui.log(`Exported: ${result.file}`);
-        }
-
-    } catch (error) {
-        ui.showError(`Export failed: ${error.message}`);
-    }
+function drawMiniResidual() {
+  const canvas = document.getElementById('mini-residual');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width = canvas.offsetWidth || 260;
+  const H = canvas.height = 100;
+  ctx.fillStyle = '#080b0e'; ctx.fillRect(0,0,W,H);
+  const colors = { T:'#ff6b35', U:'#32d74b', p:'#64d2ff' };
+  const pad = 8;
+  for (const [key, vals] of Object.entries(residualHistory)) {
+    if (!vals || vals.length < 2) continue;
+    const maxV = Math.max(...vals.filter(isFinite)) || 1;
+    const minV = Math.min(...vals.filter(v=>v>0&&isFinite(v))) || 1e-10;
+    ctx.strokeStyle = colors[key] || '#fff'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    vals.forEach((v, i) => {
+      const x = pad + (W-2*pad)*i/Math.max(1,vals.length-1);
+      const logV = Math.log10(Math.max(v,minV));
+      const y = H-pad-(H-2*pad)*(logV-Math.log10(minV))/(Math.log10(maxV)-Math.log10(minV)+1e-10);
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  }
 }
 
-function performExport() {
-    exportResults();
+// ── Slice controls ──
+function setAxis(a) {
+  ['x','y','z'].forEach(ax => {
+    document.getElementById('ax-'+ax).classList.toggle('on', ax===a);
+  });
+  if (viz3d) { viz3d.sliceAxis = a; viz3d._redrawSlice(); }
+  if (rightViz3d) { rightViz3d.sliceAxis = a; rightViz3d._redrawSlice(); }
+}
+function onSlice(v) {
+  document.getElementById('slice-disp').textContent = v;
+  if (viz3d) { viz3d.sliceIndex = parseInt(v); viz3d._redrawSlice(); }
+  if (rightViz3d) { rightViz3d.sliceIndex = parseInt(v); rightViz3d._redrawSlice(); }
+}
+function resetCamera() { if (viz3d) viz3d.resetCamera(); }
+function setViewAngle(a) { if (viz3d) viz3d.setViewAngle(a); }
+
+// ── Export ──
+async function exportResults(fmt) {
+  log(`Exporting ${fmt.toUpperCase()}...`);
+  try {
+    const r = await fetch(`${API}/api/results/export`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ format: fmt })
+    });
+    const d = await r.json();
+    if (d.status === 'success') { log(`Exported: ${d.file}`, 'success'); toast(`Exported ${fmt.toUpperCase()}`, 'ok'); }
+    else log('Export error: ' + d.message, 'error');
+  } catch(e) { log('Export error: ' + e.message, 'error'); }
 }
 
-async function saveCase(name) {
-    try {
-        const result = await api.saveCase(name);
-        ui.log(`Case saved: ${name}`);
-        document.getElementById('case-name').textContent = name;
-    } catch (error) {
-        ui.showError(`Save failed: ${error.message}`);
-    }
+async function saveCase() {
+  const name = document.getElementById('case-name-inp').value || 'myCase';
+  document.getElementById('case-name').textContent = name;
+  try {
+    const r = await fetch(`${API}/api/case/save`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name })
+    });
+    const d = await r.json();
+    if (d.status === 'success') { log(`Case saved: ${name}`, 'success'); toast('Case saved', 'ok'); }
+    else log('Save error: ' + d.message, 'error');
+  } catch(e) { log('Save error: ' + e.message, 'error'); }
 }
 
-function importMesh() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.stl,.msh,.foam';
-    input.onchange = (e) => {
-        api.importMesh(e.target.files[0])
-            .then(result => {
-                ui.log(`Mesh imported: ${result.message}`);
-            })
-            .catch(error => {
-                ui.showError(`Import failed: ${error.message}`);
-            });
-    };
-    input.click();
+async function loadCase() {
+  const name = document.getElementById('case-name-inp').value;
+  if (!name) { toast('Enter case name', 'er'); return; }
+  try {
+    const r = await fetch(`${API}/api/case/load`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name })
+    });
+    const d = await r.json();
+    if (d.status === 'success') { log(`Case loaded: ${name}`, 'success'); toast('Case loaded', 'ok'); }
+    else log('Load error: ' + d.message, 'error');
+  } catch(e) { log('Load error: ' + e.message, 'error'); }
 }
 
-function loadCase() {
-    const caseName = prompt('Case name to load:');
-    if (caseName) {
-        api.loadCase(caseName)
-            .then(result => {
-                ui.log(`Case loaded: ${caseName}`);
-                document.getElementById('case-name').textContent = caseName;
-            })
-            .catch(error => {
-                ui.showError(`Load failed: ${error.message}`);
-            });
-    }
+// ── Utilities ──
+function setEl(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
 }
 
-function openBlockMesh() {
-    ui.log('blockMesh configuration opened');
-    alert('blockMesh utility - coming soon');
-}
-
-function decompose() {
-    ui.log('Starting domain decomposition...');
-    alert('decomposePar utility - coming soon');
-}
-
-function setFields() {
-    ui.log('Setting fields...');
-    alert('setFields utility - coming soon');
-}
-
-function mapFields() {
-    ui.log('Mapping fields...');
-    alert('mapFields utility - coming soon');
-}
-
-// 3D Support
-document.addEventListener('DOMContentLoaded', function() {
-    const dimensionSelect = document.getElementById('mesh-dimension');
-    if (dimensionSelect) {
-        dimensionSelect.addEventListener('change', function(e) {
-            const nzGroup = document.getElementById('nz-group');
-            const canvas3d = document.getElementById('canvas-3d');
-            const meshNz = document.getElementById('mesh-nz');
-            const domainZ = document.getElementById('domain-z');
-            if (nzGroup) {
-                nzGroup.style.display = e.target.value === '3d' ? 'block' : 'none';
-            }
-            if (canvas3d) {
-                canvas3d.style.display = e.target.value === '3d' ? 'block' : 'none';
-            }
-            if (e.target.value === '3d') {
-                if (meshNz && parseInt(meshNz.value, 10) <= 1) {
-                    meshNz.value = 10;
-                }
-                if (domainZ && parseFloat(domainZ.value) <= 1.0) {
-                    domainZ.value = 0.2;
-                }
-            } else {
-                if (meshNz) meshNz.value = 1;
-                if (domainZ) domainZ.value = 1.0;
-            }
-        });
-    }
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+  updateMeshPreview();
+  updateBCPreview();
+  log('OpenFOAM Clone v2.0 ready', 'success');
+  log('Step 1: Set mesh → 2: Set solver → 3: Add BCs → 4: Run');
+  // Resize handlers
+  window.addEventListener('resize', () => {
+    updateMeshPreview();
+    updateBCPreview();
+    if (viz3d) viz3d.onResize();
+    if (rightViz3d) rightViz3d.onResize();
+    drawResidualChart();
+    drawMiniResidual();
+  });
 });
-
-async function createMesh3D() {
-    try {
-        const nx = parseInt(document.getElementById('mesh-nx').value);
-        const ny = parseInt(document.getElementById('mesh-ny').value);
-        const nz = parseInt(document.getElementById('mesh-nz').value);
-        const domain = [
-            parseFloat(document.getElementById('domain-x').value),
-            parseFloat(document.getElementById('domain-y').value),
-            parseFloat(document.getElementById('domain-z').value)
-        ];
-        
-        ui.log('Creating 3D mesh...');
-        const result = await fetch('http://localhost:5000/api/mesh/create3d', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({nx, ny, nz, domain})
-        }).then(r => r.json());
-        
-        if (result.status === 'success') {
-            ui.log(result.message);
-            document.getElementById('mesh-info').innerHTML = `
-                <strong>3D Mesh:</strong><br>
-                ${result.mesh.nx} × ${result.mesh.ny} × ${result.mesh.nz}<br>
-                ${result.mesh.num_cells} cells
-            `;
-        }
-    } catch (e) {
-        ui.showError('3D Mesh failed: ' + e.message);
-    }
-}
-
-const originalCreateMesh = window.createMesh;
-window.createMesh = function() {
-    const dim = document.getElementById('mesh-dimension');
-    if (dim && dim.value === '3d') {
-        createMesh3D();
-    } else {
-        originalCreateMesh();
-    }
-};
