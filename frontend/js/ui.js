@@ -272,45 +272,122 @@ async function createMesh() {
   }
 }
 
+// ── MESH IMPORT ──
+async function importMesh(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const status = document.getElementById('import-status');
+  status.textContent = '⏳ Uploading ' + file.name + '...';
+  status.style.color = 'var(--txt2)';
+
+  const formData = new FormData();
+  formData.append('mesh_file', file);
+
+  try {
+    const r = await fetch(`${API}/api/mesh/import`, { method:'POST', body: formData });
+    const d = await r.json();
+    if (d.status === 'success') {
+      status.textContent = '✅ ' + d.message;
+      status.style.color = 'var(--green)';
+      if (d.nx) {
+        document.getElementById('mesh-nx').value = d.nx;
+        document.getElementById('mesh-ny').value = d.ny || d.nx;
+      }
+      log('Mesh imported: ' + file.name, 'success');
+      toast('Mesh imported', 'ok');
+      updateMeshPreview();
+      // Run blockMesh on imported file
+      const r2 = await fetch(`${API}/api/mesh/run_blockmesh`, {method:'POST'});
+      const d2 = await r2.json();
+      if (d2.status === 'success') {
+        status.textContent += ' | blockMesh ✅';
+        log('blockMesh ran on imported mesh', 'success');
+      } else {
+        status.textContent += ' | blockMesh ❌ check log';
+        log('blockMesh error: ' + d2.message, 'error');
+      }
+    } else {
+      status.textContent = '❌ ' + d.message;
+      status.style.color = 'var(--red)';
+      log('Import error: ' + d.message, 'error');
+    }
+  } catch(e) {
+    status.textContent = '❌ ' + e.message;
+    status.style.color = 'var(--red)';
+    log('Import error: ' + e.message, 'error');
+  }
+  input.value = ''; // reset so same file can be re-uploaded
+}
+
 // ── SOLVER ──
 function onSolverChange() {
   const v = document.getElementById('solver-type').value;
   const descs = {
-    laplacianFoam: 'Heat diffusion: dT/dt = α∇²T. Hot wall → Cold wall temperature distribution.',
-    simpleFoam: 'Steady incompressible NS. Lid-driven cavity flow. SIMPLE algorithm.',
-    icoFoam: 'Transient incompressible laminar. Channel flow with inlet/outlet BCs.',
-    pisoFoam: 'Transient incompressible. PISO pressure-velocity coupling.'
+    icoFoam:           'Transient laminar incompressible (PISO). Lid-driven cavity benchmark.',
+    simpleFoam:        'Steady-state incompressible (SIMPLE). Channel/pipe flow.',
+    pisoFoam:          'Transient incompressible (PISO). Pulsating/unsteady flows.',
+    pimpleFoam:        'Transient incompressible (PIMPLE). Large time steps.',
+    buoyantSimpleFoam: 'Steady natural convection with Boussinesq buoyancy. Hot/cold walls.',
+    laplacianFoam:     'Scalar heat diffusion. Solves DT∇²T=0.',
   };
   document.getElementById('solver-desc').textContent = descs[v] || '';
-  const lbl = document.querySelector('.finp + .finp, #nu').previousSibling;
-  document.querySelector('.flbl').textContent = v === 'laplacianFoam' ? 'α (thermal)' : 'ν (viscosity)';
+  const isBuoy = v === 'buoyantSimpleFoam';
+  const isLap  = v === 'laplacianFoam';
+  const isSteady = v === 'simpleFoam' || isBuoy;
+  const bf = document.getElementById('buoyant-fields');
+  const af = document.getElementById('alpha-field');
+  const rf = document.getElementById('relax-fields');
+  const rs = document.getElementById('ras-fields');
+  if (bf) bf.style.display = isBuoy   ? '' : 'none';
+  if (af) af.style.display = isLap    ? '' : 'none';
+  if (rf) rf.style.display = isSteady ? '' : 'none';
+  const ddt = document.getElementById('ddtScheme');
+  if (ddt) ddt.value = isSteady ? 'steadyState' : 'Euler';
+}
+
+function onTurbChange() {
+  const v = document.getElementById('turbulence').value;
+  const rf = document.getElementById('ras-fields');
+  if (rf) rf.style.display = v === 'RAS' ? '' : 'none';
+}
+
+function _collectSolverParams() {
+  const g  = id => { const el=document.getElementById(id); return el?el.value:null; };
+  const gn = id => { const el=document.getElementById(id); return el?parseFloat(el.value)||0:0; };
+  const gi = id => { const el=document.getElementById(id); return el?parseInt(el.value)||0:0; };
+  return {
+    nu:gn('nu'), rho:gn('rho'),
+    beta:gn('beta'), T_ref:gn('T_ref'), g:gn('g_val'), Cp:gn('Cp'), kappa:gn('kappa'),
+    alpha:gn('alpha'),
+    turbulence: g('turbulence')||'laminar', ras_model: g('ras_model')||'kEpsilon',
+    endTime:gn('endTime'), deltaT:gn('deltaT'),
+    writeInterval:gi('writeInterval'), writeControl:g('writeControl')||'timeStep',
+    ddtScheme:g('ddtScheme')||'Euler', gradScheme:g('gradScheme')||'Gauss linear',
+    divScheme_U:g('divScheme_U')||'Gauss linearUpwind grad(U)',
+    p_solver:g('p_solver')||'PCG', p_tolerance:gn('p_tolerance')||1e-6,
+    p_relTol:gn('p_relTol')||0.01,
+    nCorrectors:gi('nCorrectors')||2, nNonOrthogonalCorrectors:gi('nNonOrthogonalCorrectors')||0,
+    relaxation_U:gn('relaxation_U')||0.7, relaxation_p:gn('relaxation_p')||0.3,
+    lid_velocity:gn('lid_velocity')||1.0, U_inlet:gn('U_inlet')||1.0,
+    inlet_profile:g('inlet_profile')||'uniform',
+  };
 }
 
 async function createSolver() {
-  if (!currentMesh) { log('Create mesh first', 'error'); toast('Create mesh first','er'); return; }
   const type = document.getElementById('solver-type').value;
-  const nu = parseFloat(document.getElementById('nu').value);
-  const cfg = type === 'laplacianFoam' ? {alpha: nu} : {nu};
-
-  log(`Initializing ${type}...`);
+  const config = _collectSolverParams();
+  log(`Configuring ${type}...`);
   try {
     const r = await fetch(`${API}/api/solver/create`, {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ type, config: cfg })
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ type, config })
     });
     const d = await r.json();
     if (d.status === 'success') {
       currentSolver = type;
-      setEl('pp-solver', type);
-      setEl('pp-nu', nu);
-      setEl('st-solver', type);
-      setEl('rp-solver', type);
-      log(`${type} initialized`, 'success');
-      setStatus('Solver ready', 'ok');
-      toast('Solver ready', 'ok');
-    } else {
-      log('Solver error: ' + d.message, 'error');
-    }
+      setEl('pp-solver', type); setEl('st-solver', type); setEl('rp-solver', type);
+      log(`${type} configured`, 'success'); setStatus('Solver ready','ok'); toast('Solver ready','ok');
+    } else log('Solver error: ' + d.message, 'error');
   } catch(e) { log('Solver error: ' + e.message, 'error'); }
 }
 
@@ -440,9 +517,11 @@ async function runSimulation() {
   }, 500);
 
   try {
+    // Collect all solver params to send alongside run params
+    const solverParams = _collectSolverParams ? _collectSolverParams() : {};
     const r = await fetch(`${API}/api/simulate/run`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ max_iters: maxIters, tolerance })
+      body: JSON.stringify({ max_iters: maxIters, tolerance, ...solverParams })
     });
     const d = await r.json();
 
@@ -506,6 +585,24 @@ function stopSim() {
 }
 
 // ── VISUALIZATION ──
+function updateFieldChips(fields) {
+  // Dynamically update field chips based on what solver actually wrote
+  const chipRow = document.querySelector('.chip-row');
+  if (!chipRow) return;
+  chipRow.innerHTML = '';
+  const labels = { U:'U — Veloc', p:'p — Press', T:'T — Temp',
+    k:'k — TKE', epsilon:'ε — Dissip', omega:'ω — Spec. Diss',
+    p_rgh:'p_rgh — Hydro', nut:'νt — Turb.Visc' };
+  fields.forEach(f => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (f === activeField ? ' on' : '');
+    chip.id = 'chip-' + f;
+    chip.textContent = labels[f] || f;
+    chip.onclick = () => selectField(f);
+    chipRow.appendChild(chip);
+  });
+}
+
 function selectField(f) {
   activeField = f;
   document.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
@@ -517,6 +614,20 @@ function selectField(f) {
 
 async function visualizeField() {
   try {
+    // First fetch available fields so we show correct chips
+    try {
+      const fr = await fetch(`${API}/api/results/fields`);
+      const fd = await fr.json();
+      if (fd.fields && fd.fields.length > 0) {
+        updateFieldChips(fd.fields);
+        // If active field not available, pick first one
+        if (!fd.fields.includes(activeField)) {
+          activeField = fd.fields[0];
+          selectField(activeField);
+        }
+      }
+    } catch(e) {}
+
     const r = await fetch(`${API}/api/results/heatmap3d?field=${activeField}`);
     const d = await r.json();
     if (!d || d.status !== 'success' || !d.heatmap) {
@@ -817,9 +928,21 @@ function setEl(id, val) {
 }
 
 // ── Init ──
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   updateMeshPreview();
   updateBCPreview();
+  // Check OpenFOAM status
+  try {
+    const r = await fetch(`${API}/api/openfoam/info`);
+    const d = await r.json();
+    if (d.found || (d.openfoam && d.openfoam !== 'NOT FOUND')) {
+      log('OpenFOAM found: ' + d.openfoam, 'success');
+      setStatus('OpenFOAM ready', 'ok');
+    } else {
+      log('⚠ OpenFOAM NOT found — install OpenFOAM on the server', 'warn');
+      setStatus('OpenFOAM missing', 'er');
+    }
+  } catch(e) { log('Backend offline: ' + e.message, 'error'); }
   log('OpenFOAM Clone v2.0 ready', 'success');
   log('Step 1: Set mesh → 2: Set solver → 3: Add BCs → 4: Run');
   // Resize handlers

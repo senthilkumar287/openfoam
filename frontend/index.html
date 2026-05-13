@@ -103,6 +103,19 @@
         <div class="prog-bar" id="mesh-prog"></div>
       </div>
     </div>
+    <!-- MESH IMPORT -->
+    <div class="psec">
+      <div class="psec-title">📂 IMPORT MESH</div>
+      <div style="font-size:10px;color:var(--txt2);font-family:var(--mono);margin-bottom:8px;line-height:1.6">
+        Upload blockMeshDict file or a .zip containing polyMesh/
+      </div>
+      <input type="file" id="mesh-file-input" accept=".zip,blockMeshDict,*Dict"
+        style="display:none" onchange="importMesh(this)">
+      <button class="btn btn-f" onclick="document.getElementById('mesh-file-input').click()">
+        📂 Choose File (blockMeshDict / .zip)
+      </button>
+      <div id="import-status" style="margin-top:6px;font-size:10px;font-family:var(--mono);color:var(--txt2)"></div>
+    </div>
   </div>
 
   <!-- SOLVER TAB -->
@@ -110,34 +123,134 @@
     <div class="psec">
       <div class="psec-title">⚙ SOLVER</div>
       <div class="frow">
-        <span class="flbl">Type</span>
+        <span class="flbl">Solver</span>
         <select class="fsel" id="solver-type" onchange="onSolverChange()">
-          <option value="laplacianFoam">laplacianFoam</option>
-          <option value="simpleFoam">simpleFoam</option>
-          <option value="icoFoam">icoFoam</option>
-          <option value="pisoFoam">pisoFoam</option>
+          <option value="icoFoam">icoFoam — transient laminar</option>
+          <option value="simpleFoam">simpleFoam — steady SIMPLE</option>
+          <option value="pisoFoam">pisoFoam — transient PISO</option>
+          <option value="pimpleFoam">pimpleFoam — transient PIMPLE</option>
+          <option value="buoyantSimpleFoam">buoyantSimpleFoam — natural convection</option>
+          <option value="laplacianFoam">laplacianFoam — heat diffusion</option>
         </select>
       </div>
       <div id="solver-desc" style="margin-top:6px;font-size:10px;color:var(--txt2);font-family:var(--mono);line-height:1.6;padding:6px;background:#0a0d0f;border-radius:4px">
-        Heat diffusion: dT/dt = α∇²T. Solves steady temperature distribution.
+        Transient laminar incompressible flow. PISO algorithm. Cavity benchmark.
+      </div>
+    </div>
+    <div class="psec">
+      <div class="psec-title">⏱ CONTROL DICT</div>
+      <div class="frow"><span class="flbl">endTime</span><input class="finp" id="endTime" type="number" value="0.5" step="0.1"></div>
+      <div class="frow"><span class="flbl">deltaT</span><input class="finp" id="deltaT" type="number" value="0.005" step="0.001"></div>
+      <div class="frow"><span class="flbl">writeInterval</span><input class="finp" id="writeInterval" type="number" value="20"></div>
+      <div class="frow">
+        <span class="flbl">writeControl</span>
+        <select class="fsel" id="writeControl">
+          <option value="timeStep">timeStep</option>
+          <option value="runTime">runTime</option>
+          <option value="adjustableRunTime">adjustableRunTime</option>
+        </select>
       </div>
     </div>
     <div class="psec">
       <div class="psec-title">🔬 TRANSPORT</div>
-      <div class="frow"><span class="flbl">α / ν</span><input class="finp" id="nu" type="number" value="0.01" step="0.001"></div>
-      <div class="frow"><span class="flbl">ρ</span><input class="finp" id="rho" type="number" value="1.0" step="0.1"></div>
+      <div class="frow"><span class="flbl">ν (nu)</span><input class="finp" id="nu" type="number" value="0.01" step="0.001"></div>
+      <div class="frow"><span class="flbl">ρ (rho)</span><input class="finp" id="rho" type="number" value="1.0" step="0.1"></div>
+      <!-- Buoyant fields (shown for buoyantSimpleFoam) -->
+      <div id="buoyant-fields" style="display:none">
+        <div class="frow"><span class="flbl">β (beta)</span><input class="finp" id="beta" type="number" value="0.003" step="0.0001"></div>
+        <div class="frow"><span class="flbl">T_ref (K)</span><input class="finp" id="T_ref" type="number" value="293"></div>
+        <div class="frow"><span class="flbl">g (m/s²)</span><input class="finp" id="g_val" type="number" value="9.81" step="0.01"></div>
+        <div class="frow"><span class="flbl">Cp (J/kgK)</span><input class="finp" id="Cp" type="number" value="1005"></div>
+        <div class="frow"><span class="flbl">κ (kappa)</span><input class="finp" id="kappa" type="number" value="0.025" step="0.001"></div>
+      </div>
+      <!-- Laplacian / thermal diffusivity -->
+      <div id="alpha-field" style="display:none">
+        <div class="frow"><span class="flbl">α (DT)</span><input class="finp" id="alpha" type="number" value="1e-5" step="1e-6"></div>
+      </div>
     </div>
     <div class="psec">
       <div class="psec-title">🌀 TURBULENCE</div>
       <div class="frow">
-        <span class="flbl">Model</span>
-        <select class="fsel">
-          <option>laminar</option><option>k-ε</option><option>k-ω SST</option>
+        <span class="flbl">simulationType</span>
+        <select class="fsel" id="turbulence" onchange="onTurbChange()">
+          <option value="laminar">laminar</option>
+          <option value="RAS">RAS</option>
+        </select>
+      </div>
+      <div id="ras-fields" style="display:none">
+        <div class="frow">
+          <span class="flbl">RASModel</span>
+          <select class="fsel" id="ras_model">
+            <option value="kEpsilon">k-ε (kEpsilon)</option>
+            <option value="kOmegaSST">k-ω SST (kOmegaSST)</option>
+            <option value="realizableKE">realizable k-ε</option>
+            <option value="RNGkEpsilon">RNG k-ε</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="psec">
+      <div class="psec-title">🧮 NUMERICAL SCHEMES</div>
+      <div class="frow">
+        <span class="flbl">ddtScheme</span>
+        <select class="fsel" id="ddtScheme">
+          <option value="Euler">Euler</option>
+          <option value="CrankNicolson 0.9">CrankNicolson</option>
+          <option value="steadyState">steadyState</option>
+        </select>
+      </div>
+      <div class="frow">
+        <span class="flbl">gradScheme</span>
+        <select class="fsel" id="gradScheme">
+          <option value="Gauss linear">Gauss linear</option>
+          <option value="leastSquares">leastSquares</option>
+        </select>
+      </div>
+      <div class="frow">
+        <span class="flbl">divScheme(U)</span>
+        <select class="fsel" id="divScheme_U">
+          <option value="Gauss linearUpwind grad(U)">linearUpwind</option>
+          <option value="Gauss linear">linear</option>
+          <option value="Gauss upwind">upwind</option>
+          <option value="Gauss limitedLinear 1">limitedLinear</option>
         </select>
       </div>
     </div>
     <div class="psec">
-      <button class="btn btn-p btn-f" onclick="createSolver()">⚙ Initialize Solver</button>
+      <div class="psec-title">🔩 LINEAR SOLVERS</div>
+      <div class="frow">
+        <span class="flbl">p solver</span>
+        <select class="fsel" id="p_solver">
+          <option value="PCG">PCG (DIC precond)</option>
+          <option value="GAMG">GAMG</option>
+          <option value="PBiCGStab">PBiCGStab</option>
+        </select>
+      </div>
+      <div class="frow"><span class="flbl">p tolerance</span><input class="finp" id="p_tolerance" type="number" value="1e-6" step="1e-7"></div>
+      <div class="frow"><span class="flbl">p relTol</span><input class="finp" id="p_relTol" type="number" value="0.01" step="0.01"></div>
+      <div class="frow"><span class="flbl">nCorrectors</span><input class="finp" id="nCorrectors" type="number" value="2" min="1" max="5"></div>
+      <div class="frow"><span class="flbl">nNonOrth</span><input class="finp" id="nNonOrthogonalCorrectors" type="number" value="0" min="0" max="3"></div>
+      <!-- SIMPLE relaxation -->
+      <div id="relax-fields" style="display:none">
+        <div class="frow"><span class="flbl">relaxU</span><input class="finp" id="relaxation_U" type="number" value="0.7" step="0.05" min="0.1" max="1"></div>
+        <div class="frow"><span class="flbl">relaxP</span><input class="finp" id="relaxation_p" type="number" value="0.3" step="0.05" min="0.1" max="1"></div>
+      </div>
+    </div>
+    <div class="psec">
+      <div class="psec-title">🌊 INLET PROFILE</div>
+      <div class="frow">
+        <span class="flbl">Profile</span>
+        <select class="fsel" id="inlet_profile">
+          <option value="uniform">Uniform (flat)</option>
+          <option value="parabolic">Parabolic (Poiseuille)</option>
+          <option value="power_law">Power law (1/7)</option>
+        </select>
+      </div>
+      <div class="frow"><span class="flbl">U_inlet</span><input class="finp" id="U_inlet" type="number" value="1.0" step="0.1"></div>
+      <div class="frow"><span class="flbl">lid velocity</span><input class="finp" id="lid_velocity" type="number" value="1.0" step="0.1"></div>
+    </div>
+    <div class="psec">
+      <button class="btn btn-p btn-f" onclick="createSolver()">⚙ Apply Solver Settings</button>
     </div>
   </div>
 

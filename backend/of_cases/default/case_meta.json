@@ -1,0 +1,61 @@
+{
+  "case_name": "myCase",
+  "solver_type": "icoFoam",
+  "params": {
+    "nx": 30,
+    "ny": 30,
+    "nz": 1,
+    "Lx": 1.0,
+    "Ly": 1.0,
+    "Lz": 1.0,
+    "nu": 0.01,
+    "rho": 1,
+    "beta": 0.003,
+    "T_ref": 293,
+    "g": 9.81,
+    "Cp": 1005,
+    "kappa": 0.025,
+    "alpha": 1e-05,
+    "turbulence": "laminar",
+    "ras_model": "kEpsilon",
+    "endTime": 0.5,
+    "deltaT": 0.005,
+    "writeInterval": 20,
+    "writeControl": "timeStep",
+    "ddtScheme": "Euler",
+    "gradScheme": "Gauss linear",
+    "divScheme_U": "Gauss linearUpwind grad(U)",
+    "p_solver": "PCG",
+    "p_tolerance": 1e-06,
+    "p_relTol": 0.01,
+    "nCorrectors": 2,
+    "nNonOrthogonalCorrectors": 0,
+    "relaxation_U": 0.7,
+    "relaxation_p": 0.3,
+    "lid_velocity": 1,
+    "U_inlet": 1,
+    "inlet_profile": "uniform",
+    "T_hot": 100,
+    "bcs": {
+      "left": {
+        "type": "dirichlet",
+        "value": 100
+      }
+    },
+    "internal_field_U": [
+      0,
+      0,
+      0
+    ],
+    "internal_field_p": 0,
+    "T_init": 300
+  },
+  "mesh_params": {
+    "nx": 30,
+    "ny": 30,
+    "nz": 1,
+    "Lx": 1.0,
+    "Ly": 1.0,
+    "Lz": 1.0
+  }
+}
