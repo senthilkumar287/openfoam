@@ -17,7 +17,7 @@ FoamFile
 
 ddtSchemes
 {
-    default         steadyState;
+    default         Euler;
 }
 gradSchemes
 {
@@ -33,8 +33,11 @@ divSchemes
     div(phi,epsilon) Gauss upwind;
     div(phi,omega)  Gauss upwind;
     div(phi,T)      Gauss upwind;
-    div((nuEff*dev(T(grad(U))))) Gauss linear;
-    div((nu*dev(grad(U).T()))) Gauss linear;
+    div((nuEff*dev2(T(grad(U))))) Gauss linear;
+    div(phi,e)      Gauss upwind;
+    div(phi,h)      Gauss upwind;
+    div(phi,K)      Gauss linear;
+    div(((rho*nuEff)*dev2(T(grad(U))))) Gauss linear;
 }
 laplacianSchemes
 {

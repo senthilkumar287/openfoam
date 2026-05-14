@@ -160,12 +160,13 @@ def mesh_info():
 @app.route("/api/solver/list", methods=["GET"])
 def list_solvers():
     return ok(solvers=[
-        {"name":"icoFoam",           "desc":"Transient laminar incompressible (PISO). Cavity/channel flow."},
-        {"name":"simpleFoam",        "desc":"Steady-state incompressible (SIMPLE). Channel/pipe flow."},
-        {"name":"pisoFoam",          "desc":"Transient laminar incompressible (PISO). Like icoFoam."},
-        {"name":"pimpleFoam",        "desc":"Transient incompressible (PIMPLE). Large time steps."},
-        {"name":"buoyantSimpleFoam", "desc":"Steady natural convection. Boussinesq buoyancy."},
-        {"name":"laplacianFoam",     "desc":"Scalar diffusion (heat conduction). Simplest case."},
+        {"name":"simpleFoam",         "desc":"Steady-state incompressible (SIMPLE). Channel/pipe flow."},
+        {"name":"pimpleFoam",         "desc":"Transient incompressible (PIMPLE). Large time steps."},
+        {"name":"rhoSimpleFoam",      "desc":"Steady-state compressible (SIMPLE). High-speed/density-variable flows."},
+        {"name":"rhoPimpleFoam",      "desc":"Transient compressible (PIMPLE). Density-based transient flows."},
+        {"name":"buoyantSimpleFoam",  "desc":"Steady buoyancy-driven flow. Natural convection / heated cavities."},
+        {"name":"buoyantPimpleFoam",  "desc":"Transient buoyancy-driven flow. Unsteady natural convection."},
+        {"name":"chtMultiRegionFoam", "desc":"Conjugate heat transfer. Coupled fluid/solid thermal regions."},
     ])
 
 @app.route("/api/solver/create", methods=["POST"])
@@ -470,67 +471,194 @@ def get_field(field_name):
     if hm is None:
         return err(f"Field {field_name} not found")
     return ok(heatmap=hm)
-
 @app.route("/api/results/export", methods=["POST"])
 def export_results():
     data   = request.get_json() or {}
-    fmt    = data.get("format","vtk")
+    fmt    = data.get("format", "vtk").lower()
+
     runner = active_runner(create=False)
+
     if runner is None:
         return err("No results to export")
 
     latest = get_latest_time_dir(runner.case_dir)
+
     if latest is None:
         return err("No time steps found")
 
     exports_dir = os.path.join(os.path.dirname(__file__), "exports")
     os.makedirs(exports_dir, exist_ok=True)
 
+    # =========================================================
+    # VTK EXPORT
+    # =========================================================
     if fmt == "vtk":
-        # Run foamToVTK if available
-        rc, out = run_of_cmd("foamToVTK", runner.case_dir, timeout=60)
-        vtk_dir = os.path.join(runner.case_dir, "VTK")
-        if os.path.exists(vtk_dir):
-            dst = os.path.join(exports_dir, f"{_active_case}.vtk.tar.gz")
-            import tarfile
-            with tarfile.open(dst,"w:gz") as tar:
-                tar.add(vtk_dir, arcname="VTK")
-            return ok(file=dst, message="VTK export complete")
-        else:
-            return err(f"foamToVTK failed: {out[:200]}")
 
+        import glob
+
+        # Run foamToVTK
+        rc, out = run_of_cmd(
+            "foamToVTK -latestTime",
+            runner.case_dir,
+            timeout=60
+        )
+
+        if rc != 0:
+            return err(f"foamToVTK failed:\n{out[:500]}")
+
+        vtk_dir = os.path.join(runner.case_dir, "VTK")
+
+        # Find generated internal.vtu
+        vtu_files = glob.glob(
+            os.path.join(vtk_dir, "**", "internal.vtu"),
+            recursive=True
+        )
+
+        if not vtu_files:
+            return err(f"No VTK output generated:\n{out[:500]}")
+
+        vtu_src = max(vtu_files, key=os.path.getmtime)
+
+        dst = os.path.join(
+            exports_dir,
+            f"{_active_case}.vtk"
+        )
+
+        try:
+            import vtk
+
+            reader = vtk.vtkXMLUnstructuredGridReader()
+            reader.SetFileName(vtu_src)
+            reader.Update()
+
+            writer = vtk.vtkUnstructuredGridWriter()
+            writer.SetFileName(dst)
+            writer.SetInputData(reader.GetOutput())
+            writer.SetFileTypeToASCII()
+
+            writer.Write()
+
+            return ok(
+                file=dst,
+                message="VTK export complete"
+            )
+
+        except ImportError:
+
+            # Fallback:
+            # copy VTU directly if vtk python package unavailable
+
+            import shutil
+
+            fallback_dst = os.path.join(
+                exports_dir,
+                f"{_active_case}.vtu"
+            )
+
+            shutil.copy2(vtu_src, fallback_dst)
+
+            return ok(
+                file=fallback_dst,
+                message="VTU export complete (vtk Python module unavailable)"
+            )
+
+        except Exception as e:
+
+            return err(f"VTK conversion failed: {str(e)}")
+
+    # =========================================================
+    # CSV EXPORT
+    # =========================================================
     elif fmt == "csv":
+
         import csv
-        nx=int(_active_params.get("nx",20))
-        ny=int(_active_params.get("ny",20))
-        nz=int(_active_params.get("nz",1))
-        dst = os.path.join(exports_dir, f"{_active_case}_results.csv")
-        with open(dst,"w",newline="") as f:
+        import numpy as np
+
+        nx = int(_active_params.get("nx", 20))
+        ny = int(_active_params.get("ny", 20))
+        nz = int(_active_params.get("nz", 1))
+
+        dst = os.path.join(
+            exports_dir,
+            f"{_active_case}_results.csv"
+        )
+
+        with open(dst, "w", newline="") as f:
+
             writer = csv.writer(f)
-            writer.writerow(["field","i","j","k","value"])
-            for field in ["U","p","T"]:
-                hm = runner.get_heatmap(field,nx,ny,nz)
+
+            writer.writerow([
+                "field",
+                "i",
+                "j",
+                "k",
+                "value"
+            ])
+
+            for field in ["U", "p", "T"]:
+
+                hm = runner.get_heatmap(field, nx, ny, nz)
+
                 if hm:
-                    import numpy as np
+
                     arr = np.array(hm["data"])
+
                     for k in range(nz):
                         for j in range(ny):
                             for i in range(nx):
-                                writer.writerow([field,i,j,k,arr[k,j,i]])
-        return ok(file=dst, message="CSV export complete")
 
+                                writer.writerow([
+                                    field,
+                                    i,
+                                    j,
+                                    k,
+                                    float(arr[k, j, i])
+                                ])
+
+        return ok(
+            file=dst,
+            message="CSV export complete"
+        )
+
+    # =========================================================
+    # JSON EXPORT
+    # =========================================================
     elif fmt == "json":
-        dst = os.path.join(exports_dir, f"{_active_case}_results.json")
-        nx=int(_active_params.get("nx",20)); ny=int(_active_params.get("ny",20)); nz=int(_active_params.get("nz",1))
-        out_data = {"case": _active_case, "solver": _active_solver, "params": _active_params, "fields": {}}
-        for field in ["U","p","T"]:
-            hm = runner.get_heatmap(field,nx,ny,nz)
+
+        nx = int(_active_params.get("nx", 20))
+        ny = int(_active_params.get("ny", 20))
+        nz = int(_active_params.get("nz", 1))
+
+        dst = os.path.join(
+            exports_dir,
+            f"{_active_case}_results.json"
+        )
+
+        out_data = {
+            "case": _active_case,
+            "solver": _active_solver,
+            "params": _active_params,
+            "fields": {}
+        }
+
+        for field in ["U", "p", "T"]:
+
+            hm = runner.get_heatmap(field, nx, ny, nz)
+
             if hm:
                 out_data["fields"][field] = hm
-        with open(dst,"w") as f:
-            json.dump(out_data, f)
-        return ok(file=dst, message="JSON export complete")
 
+        with open(dst, "w") as f:
+            json.dump(out_data, f, indent=2)
+
+        return ok(
+            file=dst,
+            message="JSON export complete"
+        )
+
+    # =========================================================
+    # UNKNOWN FORMAT
+    # =========================================================
     return err(f"Unknown format: {fmt}")
 
 # ── OpenFOAM info ────────────────────────────────────────────────

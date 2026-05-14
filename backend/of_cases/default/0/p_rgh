@@ -10,26 +10,29 @@ FoamFile
 {
     version         2.0;
     format          ascii;
-    class           volVectorField;
+    class           volScalarField;
     location        "0";
-    object          U;
+    object          p_rgh;
 }
 
-dimensions      [0 1 -1 0 0 0 0];
-internalField   uniform (0 0 0);
+dimensions      [1 -1 -2 0 0 0 0];
+internalField   uniform 0;
 boundaryField
 {
     hotWall
     {
-        type            noSlip;
+        type            fixedFluxPressure;
+        value           uniform 0;
     }
     coldWall
     {
-        type            noSlip;
+        type            fixedFluxPressure;
+        value           uniform 0;
     }
     walls
     {
-        type            noSlip;
+        type            fixedFluxPressure;
+        value           uniform 0;
     }
     frontAndBack
     {

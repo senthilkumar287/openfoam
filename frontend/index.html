@@ -125,12 +125,13 @@
       <div class="frow">
         <span class="flbl">Solver</span>
         <select class="fsel" id="solver-type" onchange="onSolverChange()">
-          <option value="icoFoam">icoFoam — transient laminar</option>
-          <option value="simpleFoam">simpleFoam — steady SIMPLE</option>
-          <option value="pisoFoam">pisoFoam — transient PISO</option>
-          <option value="pimpleFoam">pimpleFoam — transient PIMPLE</option>
-          <option value="buoyantSimpleFoam">buoyantSimpleFoam — natural convection</option>
-          <option value="laplacianFoam">laplacianFoam — heat diffusion</option>
+          <option value="simpleFoam">simpleFoam — steady incompressible</option>
+          <option value="pimpleFoam">pimpleFoam — transient incompressible</option>
+          <option value="rhoSimpleFoam">rhoSimpleFoam — steady compressible</option>
+          <option value="rhoPimpleFoam">rhoPimpleFoam — transient compressible</option>
+          <option value="buoyantSimpleFoam">buoyantSimpleFoam — steady natural convection</option>
+          <option value="buoyantPimpleFoam">buoyantPimpleFoam — transient natural convection</option>
+          <option value="chtMultiRegionFoam">chtMultiRegionFoam — conjugate heat transfer</option>
         </select>
       </div>
       <div id="solver-desc" style="margin-top:6px;font-size:10px;color:var(--txt2);font-family:var(--mono);line-height:1.6;padding:6px;background:#0a0d0f;border-radius:4px">

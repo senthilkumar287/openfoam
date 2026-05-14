@@ -13,8 +13,5 @@ boundaryField
 {
     movingWall   { type epsilonWallFunction; value uniform 0.000539; }
     fixedWalls   { type epsilonWallFunction; value uniform 0.000539; }
-    inlet        { type fixedValue;          value uniform 0.000539; }
-    outlet       { type zeroGradient; }
-    walls        { type epsilonWallFunction; value uniform 0.000539; }
     frontAndBack { type empty; }
 }

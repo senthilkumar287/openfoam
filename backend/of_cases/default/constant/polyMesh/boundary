@@ -18,15 +18,17 @@ FoamFile
 
 4
 (
-    inlet
+    hotWall
     {
-        type            patch;
+        type            wall;
+        inGroups        1(wall);
         nFaces          30;
         startFace       1740;
     }
-    outlet
+    coldWall
     {
-        type            patch;
+        type            wall;
+        inGroups        1(wall);
         nFaces          30;
         startFace       1770;
     }

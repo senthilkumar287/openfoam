@@ -9,9 +9,9 @@ Build  : _9a9aeb73-20260127 OPENFOAM=2312 patch=260127 version=2312
 Arch   : "LSB;label=32;scalar=64"
 Exec   : blockMesh
 Date   : May 14 2026
-Time   : 05:12:23
+Time   : 09:11:17
 Host   : Senthil
-PID    : 141809
+PID    : 251955
 I/O    : uncollated
 Case   : /home/senthil/openfoam_wsl_final/openfoam_final/backend/of_cases/default
 nProcs : 1
@@ -22,114 +22,40 @@ allowSystemOperations : Allowing user-supplied system call operations
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 Create time
 
-Creating block mesh from "system/blockMeshDict"
-Creating block edges
-No non-planar block faces defined
-Creating topology blocks
+--> FOAM Warning : 
+    From bool Foam::IOobject::readHeader(Foam::dictionary&, Foam::Istream&)
+    in file db/IOobject/IOobjectReadHeader.C at line 118
+    Reading "system/blockMeshDict" at line 1
+    First token could not be read or is not 'FoamFile'
 
-Creating topology patches - from boundary section
+Check header is of the form:
 
-Creating block mesh topology
-
-Check topology
-
-	Basic statistics
-		Number of internal faces : 0
-		Number of boundary faces : 6
-		Number of defined boundary faces : 6
-		Number of undefined boundary faces : 0
-	Checking patch -> block consistency
-
-Creating block offsets
-Creating merge list (topological search)...
-Deleting polyMesh directory "constant/polyMesh"
-
-Creating polyMesh from blockMesh
-Creating patches
-Creating cells
-Creating points with scale (1 1 1)
-    Block 0 cell size :
-        i : 0.033333333 .. 0.033333333
-        j : 0.033333333 .. 0.033333333
-        k : 1 .. 1
-
-No patch pairs to merge
-
-Writing polyMesh with 0 cellZones
-----------------
-Mesh Information
-----------------
-  boundingBox: (0 0 0) (1 1 1)
-  nPoints: 1922
-  nCells: 900
-  nFaces: 3660
-  nInternalFaces: 1740
-----------------
-Patches
-----------------
-  patch 0 (start: 1740 size: 30) name: inlet
-  patch 1 (start: 1770 size: 30) name: outlet
-  patch 2 (start: 1800 size: 60) name: walls
-  patch 3 (start: 1860 size: 1800) name: frontAndBack
-
-End
-
-/*---------------------------------------------------------------------------*\
+/*--------------------------------*- C++ -*----------------------------------*\
 | =========                 |                                                 |
 | \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
 |  \\    /   O peration     | Version:  2312                                  |
 |   \\  /    A nd           | Website:  www.openfoam.com                      |
 |    \\/     M anipulation  |                                                 |
 \*---------------------------------------------------------------------------*/
-Build  : _9a9aeb73-20260127 OPENFOAM=2312 patch=260127 version=2312
-Arch   : "LSB;label=32;scalar=64"
-Exec   : simpleFoam
-Date   : May 14 2026
-Time   : 05:12:24
-Host   : Senthil
-PID    : 142546
-I/O    : uncollated
-Case   : /home/senthil/openfoam_wsl_final/openfoam_final/backend/of_cases/default
-nProcs : 1
-trapFpe: Floating point exception trapping enabled (FOAM_SIGFPE).
-fileModificationChecking : Monitoring run-time modified files using timeStampMaster (fileModificationSkew 5, maxFileModificationPolls 20)
-allowSystemOperations : Allowing user-supplied system call operations
-
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    arch        "LSB;label=32;scalar=64";
+    class       IOobject;
+    location    "system";
+    object      blockMeshDict;
+}
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-Create time
-
-Create mesh for time = 0
-
-
-SIMPLE: no convergence criteria found. Calculations will run for 0.5 steps.
-
-Reading field p
-
-Reading field U
-
-Reading/calculating face flux field phi
-
-Selecting incompressible transport model Newtonian
-Selecting turbulence model type laminar
-Selecting laminar stress model Stokes
-No MRF models present
-
-No finite volume options present
-
-Starting time loop
-
-Time = 0.005
 
 
 
---> FOAM FATAL IO ERROR: (openfoam-2312 patch=260127)
-Entry 'div((nuEff*dev2(T(grad(U)))))' not found in dictionary "system/fvSchemes/divSchemes"
+--> FOAM FATAL ERROR: (openfoam-2312 patch=260127)
+"/home/senthil/openfoam_wsl_final/openfoam_final/backend/of_cases/default/system/blockMeshDict"
 
 
-file: system/fvSchemes/divSchemes at line 30 to 37.
-
-    From const Foam::entry& Foam::dictionary::lookupEntry(const Foam::word&, Foam::keyType::option) const
-    in file db/dictionary/dictionary.C at line 363.
+    From int main(int, char**)
+    in file findBlockMeshDict.H at line 81.
 
 FOAM exiting
 

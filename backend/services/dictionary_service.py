@@ -125,15 +125,22 @@ class DictionaryService:
     @staticmethod
     def write_fv_schemes(case_dir: str, params: dict) -> None:
         """system/fvSchemes"""
-        app   = params.get("application", "icoFoam")
+        app   = params.get("application", "simpleFoam")
         ddt   = params.get("ddtScheme",  "Euler")
         grad  = params.get("gradScheme", "Gauss linear")
         div_U = params.get("divScheme_U", "Gauss linearUpwind grad(U)")
         lapl  = params.get("laplacianScheme", "Gauss linear corrected")
         interp = params.get("interpolationScheme", "linear")
 
-        if app in ("simpleFoam", "buoyantSimpleFoam", "buoyantPimpleFoam"):
+        # Steady-state solvers use steadyState ddt; transient solvers keep Euler
+        _STEADY = ("simpleFoam", "rhoSimpleFoam", "buoyantSimpleFoam")
+        if app in _STEADY:
             ddt = "steadyState"
+
+        # Compressible solvers (rho-based)
+        _COMPRESSIBLE = ("rhoSimpleFoam", "rhoPimpleFoam",
+                         "buoyantSimpleFoam", "buoyantPimpleFoam",
+                         "chtMultiRegionFoam")
 
         # ddtSchemes
         ddt_block = Dict_()
@@ -147,16 +154,28 @@ class DictionaryService:
 
         # divSchemes — use _set_child (NOT .set) for keys containing dots,
         # because .set() splits on '.' for dotted-path navigation, which
-        # breaks keys like "div((nu*dev(grad(U).T())))".
+        # breaks keys like "div((nuEff*dev2(T(grad(U)))))".
         div_block = Dict_()
-        div_block._set_child("default",                        Scalar(value="none"))
-        div_block._set_child("div(phi,U)",                     Scalar(value=div_U))
-        div_block._set_child("div(phi,k)",                     Scalar(value="Gauss upwind"))
-        div_block._set_child("div(phi,epsilon)",               Scalar(value="Gauss upwind"))
-        div_block._set_child("div(phi,omega)",                 Scalar(value="Gauss upwind"))
-        div_block._set_child("div(phi,T)",                     Scalar(value="Gauss upwind"))
-        div_block._set_child("div((nuEff*dev(T(grad(U)))))",   Scalar(value="Gauss linear"))
-        div_block._set_child("div((nu*dev(grad(U).T())))",     Scalar(value="Gauss linear"))
+        div_block._set_child("default",                         Scalar(value="none"))
+        div_block._set_child("div(phi,U)",                      Scalar(value=div_U))
+        div_block._set_child("div(phi,k)",                      Scalar(value="Gauss upwind"))
+        div_block._set_child("div(phi,epsilon)",                Scalar(value="Gauss upwind"))
+        div_block._set_child("div(phi,omega)",                  Scalar(value="Gauss upwind"))
+        div_block._set_child("div(phi,T)",                      Scalar(value="Gauss upwind"))
+
+        if app in _COMPRESSIBLE:
+            # OpenFOAM 2312: compressible solvers require dev2 form
+            div_block._set_child("div((nuEff*dev2(T(grad(U)))))",        Scalar(value="Gauss linear"))
+            div_block._set_child("div(phi,e)",                           Scalar(value="Gauss upwind"))
+            div_block._set_child("div(phi,h)",                           Scalar(value="Gauss upwind"))
+            div_block._set_child("div(phi,K)",                           Scalar(value="Gauss linear"))
+            div_block._set_child("div(((rho*nuEff)*dev2(T(grad(U)))))",  Scalar(value="Gauss linear"))
+        else:
+            # Incompressible solvers (simpleFoam, pimpleFoam)
+            # OpenFOAM 2312 requires dev2 here too
+            div_block._set_child("div((nuEff*dev2(T(grad(U)))))", Scalar(value="Gauss linear"))
+            # Legacy form kept for older OF versions / compatibility
+            div_block._set_child("div((nu*dev(grad(U).T())))",    Scalar(value="Gauss linear"))
 
         # laplacianSchemes
         lapl_block = Dict_()
@@ -193,86 +212,146 @@ class DictionaryService:
         nNonOrth  = params.get("nNonOrthogonalCorrectors", 0)
         app       = params.get("application", "icoFoam")
 
-        # Build solvers sub-dict
+        _SIMPLE_SOLVERS = ("simpleFoam", "rhoSimpleFoam",
+                           "buoyantSimpleFoam", "chtMultiRegionFoam")
+        _PIMPLE_SOLVERS = ("pimpleFoam", "rhoPimpleFoam", "buoyantPimpleFoam")
+        _COMPRESSIBLE   = ("rhoSimpleFoam", "rhoPimpleFoam",
+                           "buoyantSimpleFoam", "buoyantPimpleFoam",
+                           "chtMultiRegionFoam")
+        _BUOYANT        = ("buoyantSimpleFoam", "buoyantPimpleFoam",
+                           "chtMultiRegionFoam")
+        _is_pimple = app in _PIMPLE_SOLVERS
+
+        # ── helpers ───────────────────────────────────────────────────────
+        def _p_solver_dict(reltol=None):
+            d_ = Dict_()
+            d_.set("solver", p_solver)
+            if p_solver == "GAMG":
+                d_.set("smoother", "GaussSeidel")
+            else:
+                d_.set("preconditioner", "DIC")
+            d_.set("tolerance", p_tol)
+            d_.set("relTol",    p_reltol if reltol is None else reltol)
+            return d_
+
+        def _scalar_dict(reltol=0.1):
+            d_ = Dict_()
+            d_.set("solver",         "PBiCGStab")
+            d_.set("preconditioner", "DILU")
+            d_.set("tolerance",      1e-6)
+            d_.set("relTol",         reltol)
+            return d_
+
+        def _final_ref(base_key):
+            """$base + relTol 0 reference block."""
+            d_ = Dict_()
+            d_.set(f"${base_key}", "")
+            d_.set("relTol", 0)
+            return d_
+
+        # ── Build solvers sub-dict ────────────────────────────────────────
         solvers_d = Dict_()
 
-        # Pressure solver
-        p_d = Dict_()
-        p_d.set("solver", p_solver)
-        if p_solver == "GAMG":
-            p_d.set("smoother", "GaussSeidel")
+        # --- p / p_rgh ---
+        if app in _BUOYANT:
+            # buoyant solvers use p_rgh as the primary pressure variable
+            solvers_d._set_child("p_rgh",      _p_solver_dict())
+            solvers_d._set_child("p_rghFinal", _final_ref("p_rgh") if _is_pimple else _p_solver_dict(reltol=0))
+            # p is diagnostic (calculated from p_rgh)
+            p_calc = Dict_()
+            p_calc.set("solver",         "PCG")
+            p_calc.set("preconditioner", "DIC")
+            p_calc.set("tolerance",      1e-6)
+            p_calc.set("relTol",         0)
+            solvers_d._set_child("p", p_calc)
         else:
-            precond = "DIC" if p_solver == "PCG" else "DIC"
-            p_d.set("preconditioner", precond)
-        p_d.set("tolerance", p_tol)
-        p_d.set("relTol",    p_reltol)
+            solvers_d._set_child("p",      _p_solver_dict())
+            solvers_d._set_child("pFinal", _final_ref("p") if _is_pimple else _p_solver_dict(reltol=0))
 
-        pFinal_d = Dict_()
-        pFinal_d.set("$p",    "")        # reference expansion — preserved verbatim
-        pFinal_d.set("relTol", 0)
-
-        solvers_d._set_child("p",      p_d)
-        solvers_d._set_child("pFinal", pFinal_d)
-
-        # Velocity solver
+        # --- U / UFinal ---
         U_d = Dict_()
         U_d.set("solver",         U_solver)
         U_d.set("preconditioner", "DILU")
         U_d.set("tolerance",      U_tol)
         U_d.set("relTol",         U_reltol)
         solvers_d._set_child("U", U_d)
+        if _is_pimple:
+            solvers_d._set_child("UFinal", _final_ref("U"))
 
-        # k / epsilon / omega / T — shared template
-        scalar_solver = Dict_()
-        scalar_solver.set("solver",         "PBiCGStab")
-        scalar_solver.set("preconditioner", "DILU")
-        scalar_solver.set("tolerance",      1e-6)
-        scalar_solver.set("relTol",         0.1)
-        solvers_d._set_child("k",       scalar_solver)
-        solvers_d._set_child("epsilon", scalar_solver)
-        solvers_d._set_child("omega",   scalar_solver)
-        solvers_d._set_child("T",       scalar_solver)
+        # --- scalar fields (k, epsilon, omega, T, h, e) ---
+        solvers_d._set_child("k",       _scalar_dict())
+        solvers_d._set_child("epsilon", _scalar_dict())
+        solvers_d._set_child("omega",   _scalar_dict())
+        solvers_d._set_child("T",       _scalar_dict())
+        if app in _COMPRESSIBLE:
+            solvers_d._set_child("h",   _scalar_dict())
+            solvers_d._set_child("e",   _scalar_dict())
+            rho_d = Dict_()
+            rho_d.set("solver",         "diagonal")
+            solvers_d._set_child("rho", rho_d)
+        if _is_pimple:
+            solvers_d._set_child("kFinal",       _final_ref("k"))
+            solvers_d._set_child("epsilonFinal", _final_ref("epsilon"))
+            solvers_d._set_child("omegaFinal",   _final_ref("omega"))
+            solvers_d._set_child("TFinal",       _final_ref("T"))
+            if app in _COMPRESSIBLE:
+                solvers_d._set_child("hFinal",   _final_ref("h"))
+                solvers_d._set_child("eFinal",   _final_ref("e"))
+                rho_final = Dict_()
+                rho_final.set("solver", "diagonal")
+                solvers_d._set_child("rhoFinal", rho_final)
 
         d = Dict_()
         d._set_child("solvers", solvers_d)
 
-        # Algorithm block
-        if app in ("icoFoam", "pisoFoam"):
-            algo = Dict_()
-            algo.set("nCorrectors",              nCorr)
-            algo.set("nNonOrthogonalCorrectors", nNonOrth)
-            algo.set("pRefCell",                 0)
-            algo.set("pRefValue",                0)
-            d._set_child("PISO", algo)
-
-        elif app in ("simpleFoam", "buoyantSimpleFoam"):
+        # Algorithm block — reuse the classifier vars already defined above
+        if app in _SIMPLE_SOLVERS:
             relax_U = params.get("relaxation_U", 0.7)
             relax_p = params.get("relaxation_p", 0.3)
 
             algo = Dict_()
             algo.set("nNonOrthogonalCorrectors", nNonOrth)
-            algo.set("pRefCell",                 0)
-            algo.set("pRefValue",                0)
             algo.set("consistent",               "yes")
+            if app in _BUOYANT:
+                algo.set("pRefCell",  0)
+                algo.set("pRefValue", 0)
             d._set_child("SIMPLE", algo)
 
-            # relaxationFactors
-            fields_relax  = Dict_()
-            fields_relax.set("p", relax_p)
-            eqns_relax    = Dict_()
+            # relaxationFactors — only include the pressure var this solver uses
+            fields_relax = Dict_()
+            if app in _BUOYANT:
+                fields_relax.set("p_rgh", relax_p)
+                fields_relax.set("rho",   0.05)
+            else:
+                fields_relax.set("p",     relax_p)
+                if app in _COMPRESSIBLE:
+                    fields_relax.set("rho", 0.05)
+            eqns_relax = Dict_()
             eqns_relax.set("U",       relax_U)
             eqns_relax.set("k",       0.7)
             eqns_relax.set("epsilon", 0.7)
             eqns_relax.set("omega",   0.7)
             eqns_relax.set("T",       0.5)
+            if app in _COMPRESSIBLE:
+                eqns_relax.set("h",   0.7)
+                eqns_relax.set("e",   0.7)
             relax_d = Dict_()
             relax_d._set_child("fields",    fields_relax)
             relax_d._set_child("equations", eqns_relax)
             d._set_child("relaxationFactors", relax_d)
 
-        else:  # pimpleFoam / pimple
+        elif app in _PIMPLE_SOLVERS:
             algo = Dict_()
-            algo.set("nOuterCorrectors",         2)
+            algo.set("nOuterCorrectors",         params.get("nOuterCorrectors", 2))
+            algo.set("nCorrectors",              nCorr)
+            algo.set("nNonOrthogonalCorrectors", nNonOrth)
+            algo.set("pRefCell",                 0)
+            algo.set("pRefValue",                0)
+            d._set_child("PIMPLE", algo)
+
+        else:  # unknown — generic PIMPLE fallback
+            algo = Dict_()
+            algo.set("nOuterCorrectors",         1)
             algo.set("nCorrectors",              nCorr)
             algo.set("nNonOrthogonalCorrectors", nNonOrth)
             algo.set("pRefCell",                 0)
@@ -358,6 +437,55 @@ class DictionaryService:
         _write_field(case_dir, "system/blockMeshDict", "dictionary", body)
 
     # ── constant/ ─────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def write_block_mesh_dict_buoyant(case_dir: str, params: dict) -> None:
+        """system/blockMeshDict — buoyant cavity with hotWall/coldWall/walls/frontAndBack."""
+        patches = [
+            ("hotWall",     "wall",  [[3, 7, 6, 2]]),
+            ("coldWall",    "wall",  [[1, 5, 4, 0]]),
+            ("walls",       "wall",  [[0, 4, 7, 3], [2, 6, 5, 1]]),
+            ("frontAndBack","empty", [[0, 3, 2, 1], [4, 5, 6, 7]]),
+        ]
+        body = DictionaryService._build_block_mesh_body(params, patches)
+        _write_field(case_dir, "system/blockMeshDict", "dictionary", body)
+
+    @staticmethod
+    def write_region_properties(case_dir: str, params: dict) -> None:
+        """constant/regionProperties — required by chtMultiRegionFoam.
+        OF2312 regionProperties constructor calls lookup("regions") and reads
+        it as a primitive ITstream of (type (name ...) type (name ...)) pairs.
+        Must be written as a single flat list, NOT a sub-dictionary."""
+        fluid_regions = params.get("fluid_regions", ["fluid"])
+        solid_regions = params.get("solid_regions", ["solid"])
+
+        fluid_str = " ".join(fluid_regions)
+        solid_str = " ".join(solid_regions)
+        # Write the file manually — the dict engine cannot represent this
+        # mixed-primitive format without producing a sub-dict node.
+        full_path = os.path.join(case_dir, "constant", "regionProperties")
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        content = f"""\
+FoamFile
+{{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      regionProperties;
+}}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+regions
+(
+    fluid  ({fluid_str})
+    solid  ({solid_str})
+);
+
+// ************************************************************************* //
+"""
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(content)
 
     @staticmethod
     def write_transport_properties(case_dir: str, params: dict) -> None:
@@ -576,13 +704,19 @@ class DictionaryService:
         """0/p — channel flow (fixed outlet, optional fixed inlet)."""
         p_outlet = params.get("p_outlet",   0.0)
         p_inlet  = params.get("p_inlet_val", None)
+        app      = params.get("application", "")
+        _RHO_CHANNEL = ("rhoSimpleFoam", "rhoPimpleFoam")
+        # compressible rho-solvers need thermodynamic pressure [Pa] = [kg m-1 s-2]
+        dims = (1, -1, -2, 0, 0, 0, 0) if app in _RHO_CHANNEL else (0, 2, -2, 0, 0, 0, 0)
+        # sensible default pressure for compressible: 101325 Pa
+        if app in _RHO_CHANNEL and p_outlet == 0.0:
+            p_outlet = params.get("p_outlet", 101325.0)
 
         d = Dict_()
-        d.set("dimensions",    Dimensioned(dims=(0, 2, -2, 0, 0, 0, 0), value=Scalar(value="")))
+        d.set("dimensions",    Dimensioned(dims=dims, value=Scalar(value="")))
         d.set("internalField", FieldValue(kind="uniform", value=Scalar(value=p_outlet)))
 
         bf = Dict_()
-
         inlet_d = Dict_()
         if p_inlet is not None:
             inlet_d.set("type",  "fixedValue")
@@ -668,6 +802,34 @@ class DictionaryService:
         _write_field(case_dir, "0/T", "volScalarField", d)
 
     @staticmethod
+    def write_T_channel(case_dir: str, params: dict) -> None:
+        """0/T — compressible channel (rhoSimpleFoam / rhoPimpleFoam)."""
+        T_inlet = params.get("T_inlet", 300.0)
+        T_init  = params.get("T_init",  T_inlet)
+
+        d = Dict_()
+        d.set("dimensions",    Dimensioned(dims=(0, 0, 0, 1, 0, 0, 0), value=Scalar(value="")))
+        d.set("internalField", FieldValue(kind="uniform", value=Scalar(value=T_init)))
+
+        bf = Dict_()
+        inlet_d = Dict_()
+        inlet_d.set("type",  "fixedValue")
+        inlet_d.set("value", FieldValue(kind="uniform", value=Scalar(value=T_inlet)))
+        bf._set_child("inlet", inlet_d)
+
+        outlet_d = Dict_(); outlet_d.set("type", "zeroGradient")
+        bf._set_child("outlet", outlet_d)
+
+        walls_d = Dict_(); walls_d.set("type", "zeroGradient")
+        bf._set_child("walls", walls_d)
+
+        fab = Dict_(); fab.set("type", "empty")
+        bf._set_child("frontAndBack", fab)
+
+        d._set_child("boundaryField", bf)
+        _write_field(case_dir, "0/T", "volScalarField", d)
+
+    @staticmethod
     def write_T_laplacian(case_dir: str, params: dict) -> None:
         """0/T — laplacianFoam."""
         T_hot  = params.get("T_hot",  500.0)
@@ -709,23 +871,36 @@ class DictionaryService:
         eps0  = Cmu ** 0.75 * k0 ** 1.5 / L_ref
         omega0 = k0 / (Cmu * L_ref ** 2 * eps0 / k0) if eps0 > 0 else k0 / (nu * 6)
 
+        # Determine wall patches based on solver type
+        app = params.get("application", "")
+        _BUOYANT_APPS = ("buoyantSimpleFoam", "buoyantPimpleFoam", "chtMultiRegionFoam")
+        _is_buoyant = app in _BUOYANT_APPS
+
+        if _is_buoyant:
+            wall_patches = ["hotWall", "coldWall", "walls"]
+            has_inlet_outlet = False
+        else:
+            wall_patches = ["movingWall", "fixedWalls", "walls"]
+            has_inlet_outlet = True
+
         # ── k ──────────────────────────────────────────────────────────────
         k_d = Dict_()
         k_d.set("dimensions",    Dimensioned(dims=(0, 2, -2, 0, 0, 0, 0), value=Scalar(value="")))
         k_d.set("internalField", FieldValue(kind="uniform", value=Scalar(value=round(k0, 6))))
 
         k_bf = Dict_()
-        for patch in ("movingWall", "fixedWalls", "walls"):
+        for patch in wall_patches:
             p = Dict_()
             p.set("type",  "kqRWallFunction")
             p.set("value", FieldValue(kind="uniform", value=Scalar(value=round(k0, 6))))
             k_bf._set_child(patch, p)
-        inlet_k = Dict_()
-        inlet_k.set("type",  "fixedValue")
-        inlet_k.set("value", FieldValue(kind="uniform", value=Scalar(value=round(k0, 6))))
-        k_bf._set_child("inlet", inlet_k)
-        outlet_k = Dict_(); outlet_k.set("type", "zeroGradient")
-        k_bf._set_child("outlet", outlet_k)
+        if has_inlet_outlet:
+            inlet_k = Dict_()
+            inlet_k.set("type",  "fixedValue")
+            inlet_k.set("value", FieldValue(kind="uniform", value=Scalar(value=round(k0, 6))))
+            k_bf._set_child("inlet", inlet_k)
+            outlet_k = Dict_(); outlet_k.set("type", "zeroGradient")
+            k_bf._set_child("outlet", outlet_k)
         fab_k = Dict_(); fab_k.set("type", "empty")
         k_bf._set_child("frontAndBack", fab_k)
         k_d._set_child("boundaryField", k_bf)
@@ -738,17 +913,18 @@ class DictionaryService:
             e_d.set("internalField", FieldValue(kind="uniform", value=Scalar(value=round(eps0, 6))))
 
             e_bf = Dict_()
-            for patch in ("movingWall", "fixedWalls", "walls"):
+            for patch in wall_patches:
                 p = Dict_()
                 p.set("type",  "epsilonWallFunction")
                 p.set("value", FieldValue(kind="uniform", value=Scalar(value=round(eps0, 6))))
                 e_bf._set_child(patch, p)
-            inlet_e = Dict_()
-            inlet_e.set("type",  "fixedValue")
-            inlet_e.set("value", FieldValue(kind="uniform", value=Scalar(value=round(eps0, 6))))
-            e_bf._set_child("inlet", inlet_e)
-            outlet_e = Dict_(); outlet_e.set("type", "zeroGradient")
-            e_bf._set_child("outlet", outlet_e)
+            if has_inlet_outlet:
+                inlet_e = Dict_()
+                inlet_e.set("type",  "fixedValue")
+                inlet_e.set("value", FieldValue(kind="uniform", value=Scalar(value=round(eps0, 6))))
+                e_bf._set_child("inlet", inlet_e)
+                outlet_e = Dict_(); outlet_e.set("type", "zeroGradient")
+                e_bf._set_child("outlet", outlet_e)
             fab_e = Dict_(); fab_e.set("type", "empty")
             e_bf._set_child("frontAndBack", fab_e)
             e_d._set_child("boundaryField", e_bf)
@@ -760,17 +936,18 @@ class DictionaryService:
             o_d.set("internalField", FieldValue(kind="uniform", value=Scalar(value=round(omega0, 4))))
 
             o_bf = Dict_()
-            for patch in ("movingWall", "fixedWalls", "walls"):
+            for patch in wall_patches:
                 p = Dict_()
                 p.set("type",  "omegaWallFunction")
                 p.set("value", FieldValue(kind="uniform", value=Scalar(value=round(omega0, 4))))
                 o_bf._set_child(patch, p)
-            inlet_o = Dict_()
-            inlet_o.set("type",  "fixedValue")
-            inlet_o.set("value", FieldValue(kind="uniform", value=Scalar(value=round(omega0, 4))))
-            o_bf._set_child("inlet", inlet_o)
-            outlet_o = Dict_(); outlet_o.set("type", "zeroGradient")
-            o_bf._set_child("outlet", outlet_o)
+            if has_inlet_outlet:
+                inlet_o = Dict_()
+                inlet_o.set("type",  "fixedValue")
+                inlet_o.set("value", FieldValue(kind="uniform", value=Scalar(value=round(omega0, 4))))
+                o_bf._set_child("inlet", inlet_o)
+                outlet_o = Dict_(); outlet_o.set("type", "zeroGradient")
+                o_bf._set_child("outlet", outlet_o)
             fab_o = Dict_(); fab_o.set("type", "empty")
             o_bf._set_child("frontAndBack", fab_o)
             o_d._set_child("boundaryField", o_bf)

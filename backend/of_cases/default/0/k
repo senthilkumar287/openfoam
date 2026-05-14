@@ -13,8 +13,5 @@ boundaryField
 {
     movingWall   { type kqRWallFunction; value uniform 0.003750; }
     fixedWalls   { type kqRWallFunction; value uniform 0.003750; }
-    inlet        { type fixedValue;       value uniform 0.003750; }
-    outlet       { type zeroGradient; }
-    walls        { type kqRWallFunction; value uniform 0.003750; }
     frontAndBack { type empty; }
 }

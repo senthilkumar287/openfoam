@@ -18,12 +18,13 @@ from services.dictionary_service import DictionaryService
 
 
 SOLVER_APPS = {
-    "icoFoam":           "icoFoam",
-    "simpleFoam":        "simpleFoam",
-    "pisoFoam":          "pisoFoam",
-    "pimpleFoam":        "pimpleFoam",
-    "buoyantSimpleFoam": "buoyantSimpleFoam",
-    "laplacianFoam":     "laplacianFoam",
+    "simpleFoam":           "simpleFoam",
+    "pimpleFoam":           "pimpleFoam",
+    "rhoSimpleFoam":        "rhoSimpleFoam",
+    "rhoPimpleFoam":        "rhoPimpleFoam",
+    "buoyantSimpleFoam":    "buoyantSimpleFoam",
+    "buoyantPimpleFoam":    "buoyantPimpleFoam",
+    "chtMultiRegionFoam":   "chtMultiRegionFoam",
 }
 
 
@@ -44,48 +45,51 @@ def build_case(case_dir: str, solver_type: str, params: dict) -> list[str]:
     written: list[str] = []
     ds = DictionaryService           # alias for brevity
 
-    is_channel   = solver_type in ("simpleFoam", "pisoFoam", "pimpleFoam")
-    is_buoyant   = solver_type == "buoyantSimpleFoam"
-    is_laplacian = solver_type == "laplacianFoam"
+    is_simple    = solver_type in ("simpleFoam", "rhoSimpleFoam")
+    is_pimple    = solver_type in ("pimpleFoam", "rhoPimpleFoam")
+    is_buoyant   = solver_type in ("buoyantSimpleFoam", "buoyantPimpleFoam")
+    is_cht       = solver_type == "chtMultiRegionFoam"
+    is_compressible = solver_type in ("rhoSimpleFoam", "rhoPimpleFoam",
+                                      "buoyantSimpleFoam", "buoyantPimpleFoam",
+                                      "chtMultiRegionFoam")
 
     # ── system/blockMeshDict ──────────────────────────────────────────────
-    if is_channel:
-        ds.write_block_mesh_dict_channel(case_dir, params)
+    if is_cht:
+        ds.write_block_mesh_dict_buoyant(case_dir, params)
+        ds.write_region_properties(case_dir, params)
+    elif is_buoyant:
+        ds.write_block_mesh_dict_buoyant(case_dir, params)
     else:
-        ds.write_block_mesh_dict(case_dir, params)
+        ds.write_block_mesh_dict_channel(case_dir, params)  # channel geometry
     written.append("system/blockMeshDict")
+    if is_cht:
+        written.append("constant/regionProperties")
 
     # ── 0/ initial fields ─────────────────────────────────────────────────
-    if is_buoyant:
+    is_rho_channel = solver_type in ("rhoSimpleFoam", "rhoPimpleFoam")
+    if is_buoyant or is_cht:
         ds.write_U_buoyant(case_dir, params)
         ds.write_p_rgh_buoyant(case_dir, params)
         ds.write_p_buoyant(case_dir, params)
         ds.write_T_buoyant(case_dir, params)
         written += ["0/U", "0/p_rgh", "0/p", "0/T"]
-    elif is_laplacian:
-        ds.write_T_laplacian(case_dir, params)
-        written.append("0/T")
-    elif is_channel:
+    else:
         ds.write_U_channel(case_dir, params)
         ds.write_p_channel(case_dir, params)
         written += ["0/U", "0/p"]
-    else:   # cavity — icoFoam / pisoFoam default
-        ds.write_U_cavity(case_dir, params)
-        ds.write_p_cavity(case_dir, params)
-        written += ["0/U", "0/p"]
+        if is_rho_channel:
+            ds.write_T_channel(case_dir, params)
+            written.append("0/T")
 
     # RAS turbulence initial fields (no-op for laminar)
     ds.write_turbulence_initial_fields(case_dir, params)
 
     # ── constant/ ─────────────────────────────────────────────────────────
-    if is_laplacian:
-        ds.write_transport_properties_laplacian(case_dir, params)
-    else:
-        ds.write_transport_properties(case_dir, params)
+    ds.write_transport_properties(case_dir, params)
     ds.write_turbulence_properties(case_dir, params)
     written += ["constant/transportProperties", "constant/turbulenceProperties"]
 
-    if is_buoyant:
+    if is_compressible:
         ds.write_thermophysical_properties(case_dir, params)
         ds.write_g_file(case_dir, params)
         written += ["constant/thermophysicalProperties", "constant/g"]
