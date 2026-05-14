@@ -1,18 +1,24 @@
 """
 OpenFOAM Clone — Flask API
 All simulation logic delegated to OpenFOAM via openfoam_backend.py
+
+Dictionary generation flows through:
+    API Route → services/case_service → services/dictionary_service
+             → dict_engine (AST → OpenFOAM text)
 """
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import os, sys, json, shutil, threading, time
 
 sys.path.insert(0, os.path.dirname(__file__))
+
 from openfoam_backend import (
     get_runner, build_case, CASES_ROOT,
     parse_residuals_log, parse_execution_time,
     read_field_as_heatmap, get_latest_time_dir,
-    OF_ROOT, OF_BASHRC, run_of_cmd
+    OF_ROOT, OF_BASHRC, run_of_cmd,
 )
+from services.dictionary_service import DictionaryService
 
 app = Flask(__name__,
     static_folder=os.path.join(os.path.dirname(__file__), '..', 'frontend'),

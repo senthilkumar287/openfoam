@@ -16,21 +16,26 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-3
+4
 (
-    movingWall
+    inlet
     {
-        type            wall;
-        inGroups        1(wall);
+        type            patch;
         nFaces          30;
         startFace       1740;
     }
-    fixedWalls
+    outlet
+    {
+        type            patch;
+        nFaces          30;
+        startFace       1770;
+    }
+    walls
     {
         type            wall;
         inGroups        1(wall);
-        nFaces          90;
-        startFace       1770;
+        nFaces          60;
+        startFace       1800;
     }
     frontAndBack
     {

@@ -40,15 +40,21 @@
       "left": {
         "type": "dirichlet",
         "value": 100
+      },
+      "right": {
+        "type": "dirichlet",
+        "value": 100
+      },
+      "top": {
+        "type": "dirichlet",
+        "value": 100
+      },
+      "bottom": {
+        "type": "dirichlet",
+        "value": 100
       }
     },
-    "internal_field_U": [
-      0,
-      0,
-      0
-    ],
-    "internal_field_p": 0,
-    "T_init": 300
+    "T_cold": 100
   },
   "mesh_params": {
     "nx": 30,

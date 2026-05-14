@@ -8,11 +8,11 @@ FoamFile
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 dimensions  [0 0 0 1 0 0 0];
-internalField   uniform 300.0;
+internalField   uniform 100;
 boundaryField
 {
     left   { type fixedValue; value uniform 100;  }
-    right  { type fixedValue; value uniform 300.0; }
+    right  { type fixedValue; value uniform 100; }
     top    { type zeroGradient; }
     bottom { type zeroGradient; }
     frontAndBack { type empty; }
